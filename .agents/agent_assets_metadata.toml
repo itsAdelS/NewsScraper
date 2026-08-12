@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "2We-JwJ-PF6WngHiOnTSv"
+uri = "file://docs/api-reference.md"
+type = "text"
+title = "PayerNews Scraper API Reference"
+description = "Full API documentation — endpoints, authentication, request/response schemas, route values, SSRF protection, and curl examples."

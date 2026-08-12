@@ -1,0 +1,279 @@
+PayerNews Scraper API — Full Reference
+
+What It Does
+
+The PayerNews Scraper API is a Node.js/Express service that accepts a payer webpage URL, fetches the page, extracts the clean human-readable text from it, and returns structured JSON. It was built to replace Microsoft Power Automate Desktop's manual scraping steps. Power Automate (or any HTTP client) POSTs a URL to the API; the API returns clean, predictable JSON that a downstream Microsoft Copilot agent can consume directly.
+
+It runs a two-tier scraping pipeline:
+
+Static engine — A lightweight Node.js HTTPS client fetches the raw HTML. Fast (< 1 second), works for any page that serves full content server-side.
+Playwright/Chromium fallback — If the static engine returns insufficient content (e.g., the page is JavaScript-rendered), a full headless Chromium browser fetches and renders the page. Slower (3–10 seconds), but handles React/Angular/Vue SPAs and pages that require JS execution.
+The scraper automatically chooses between engines. All network connections are SSRF-protected — private IP addresses, RFC-1918 ranges, loopback, and cloud metadata endpoints (e.g., 169.254.169.254) are blocked at the DNS level.
+
+Base URL
+
+Development (Replit preview)
+
+https://f74dd3d4-f3e4-4659-b1d4-fccbaba9e852-00-1931pgn0i1mb7.pike.replit.dev/api
+Note: The Replit development domain above is session-specific and may change if the workspace is restarted. Check the "API Server" entry in the Replit preview dropdown for the current live URL. All API endpoints are prefixed with /api.
+Production (deployed)
+
+Once published via Replit Deploy, the base URL is your assigned deployment domain. The same /api prefix applies:
+
+https://<your-deployment-domain>/api
+Authentication
+
+The scrape endpoint is protected by an API key passed as a Bearer token in the Authorization HTTP header.
+
+Header format
+
+Authorization: Bearer <API_KEY>
+Where the key is stored
+
+The API key is stored as a Replit Secret named PAYERNEWS_API_KEY. It is never logged or hard-coded in source. On each request the server reads the key from process.env.PAYERNEWS_API_KEY and performs a timing-safe comparison against the value you sent — this prevents timing-based key enumeration attacks.
+
+What happens without a valid key
+
+Condition	HTTP Status	Response
+No Authorization header at all	401	{"success":false,"error":"..."}
+Header present but not Bearer scheme	401	{"success":false,"error":"..."}
+Token is present but wrong	401	{"success":false,"error":"..."}
+Server has no key configured	401	{"success":false,"error":"..."}
+The health check endpoints (/api/health, /api/healthz) are not protected and require no key.
+
+Endpoints
+
+POST /api/scrape
+
+The main endpoint. Scrapes a URL and returns extracted plain text.
+
+Requires authentication: Yes (Authorization: Bearer <API_KEY>)
+
+Request
+
+Content-Type: application/json
+
+Body fields:
+
+Field	Type	Required	Description
+url	string	✅ Yes	The full URL of the payer webpage to scrape. Must be http:// or https://. Must resolve to a public (non-private) IP address.
+route	string	❌ No	Selects a payer-specific scraper. See Route Values below. If omitted or unrecognised, the route is auto-detected from the URL hostname. Defaults to generic.
+Example request body:
+
+{
+  "url": "https://providernews.anthem.com/california/articles/some-article-slug",
+  "route": "anthem"
+}
+Minimal request (route auto-detected):
+
+{
+  "url": "https://www.uhcprovider.com/en/resource-library/policies.html"
+}
+Route Values
+
+The route field tells the API which payer-specific extraction logic to use. Valid values:
+
+Route	Payer	Domains that auto-detect to this route
+generic	Any / unknown	(default when no domain matches)
+anthem	Anthem / Elevance Health	anthem.com, elevancehealth.com, anthembluecross.com (and all subdomains)
+aetna	Aetna / CVS Health	aetna.com, cvs.com (and all subdomains)
+uhc	UnitedHealth Group	uhc.com, uhcprovider.com, unitedhealthcareonline.com, unitedhealthcare.com, myuhc.com, optum.com (and all subdomains)
+cigna	Cigna / Evernorth	cigna.com, evernorth.com, cignaforhcp.com (and all subdomains)
+Resolution order:
+
+If route is supplied and is a recognised value → use it.
+Otherwise auto-detect from the URL's hostname.
+If no hostname match → use generic.
+Response
+
+Content-Type: application/json
+
+The response body is always a JSON object. The HTTP status code reflects the outcome (see table below), but the body structure is the same regardless.
+
+Response fields:
+
+Field	Type	Description
+success	boolean	true if the page was fetched and meaningful text was extracted. false otherwise.
+url	string	The original URL you submitted.
+finalUrl	string	The URL of the page after all redirects. May differ from url if the server redirected. Empty string on failure.
+route	string	The effective route used (after auto-detection).
+scraperUsed	"static" | "playwright" | ""	Which engine produced the result. Empty string if the request failed before scraping.
+title	string	The page <title> text, cleaned. Empty string on failure.
+content	string	The extracted plain text of the page — HTML tags stripped, boilerplate removed, whitespace normalised. This is the field your Copilot agent reads. Empty string on failure.
+contentLength	number	Character count of content.
+statusCode	number	The HTTP status code returned by the target server (e.g., 200, 403, 404). 0 if the request failed before a response was received.
+durationMs	number	Total elapsed time in milliseconds for the scrape.
+truncated	boolean	true if content was cut off because it exceeded the 500,000-character limit.
+error	string	(Only present when success is false) Human-readable description of what went wrong.
+HTTP status codes returned:
+
+HTTP Status	When
+200 OK	Scrape succeeded (success: true)
+400 Bad Request	url field missing, not a string, or malformed
+401 Unauthorized	Missing, malformed, or invalid API key
+403 Forbidden	URL is blocked by SSRF protection (private IP, metadata endpoint, blocked hostname)
+404 Not Found	Target server returned 404
+413 Payload Too Large	Request body is too large
+422 Unprocessable Entity	Scrape ran but failed for a reason other than 403/404/timeout (e.g., bot detection, connection refused, empty content)
+500 Internal Server Error	Unexpected internal error in the scraper
+504 Gateway Timeout	Scrape timed out (default: 30 seconds)
+Examples
+
+Successful scrape (static engine):
+
+curl -X POST \
+  "https://<base-url>/api/scrape" \
+  -H "Authorization: Bearer YOUR_API_KEY_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.aetna.com/health-care-professionals/clinical-policy.html","route":"aetna"}'
+{
+  "success": true,
+  "url": "https://www.aetna.com/health-care-professionals/clinical-policy.html",
+  "finalUrl": "https://www.aetna.com/health-care-professionals/clinical-policy.html",
+  "route": "aetna",
+  "scraperUsed": "static",
+  "title": "Clinical Policy Bulletins | Aetna",
+  "content": "Clinical Policy Bulletins\nAetna considers medically necessary...",
+  "contentLength": 14832,
+  "statusCode": 200,
+  "durationMs": 612,
+  "truncated": false
+}
+Scrape with Playwright fallback (JS-rendered page):
+
+{
+  "success": true,
+  "url": "https://www.uhcprovider.com/en/policies/policies-protocols.html",
+  "finalUrl": "https://www.uhcprovider.com/en/policies/policies-protocols.html",
+  "route": "uhc",
+  "scraperUsed": "playwright",
+  "title": "Policies and Protocols | UnitedHealthcare Provider",
+  "content": "Policies and Protocols\nFind policies, clinical criteria...",
+  "contentLength": 9241,
+  "statusCode": 200,
+  "durationMs": 8103,
+  "truncated": false
+}
+Failed scrape — SSRF protection blocked the URL:
+
+curl -X POST \
+  "https://<base-url>/api/scrape" \
+  -H "Authorization: Bearer YOUR_API_KEY_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"http://192.168.1.1/"}'
+{
+  "success": false,
+  "url": "http://192.168.1.1/",
+  "finalUrl": "",
+  "route": "generic",
+  "scraperUsed": "",
+  "title": "",
+  "content": "",
+  "contentLength": 0,
+  "statusCode": 0,
+  "durationMs": 0,
+  "truncated": false,
+  "error": "Requests to private or reserved IP addresses are not permitted"
+}
+Failed scrape — target server returned 403:
+
+{
+  "success": false,
+  "url": "https://some-payer-site.com/article",
+  "finalUrl": "https://some-payer-site.com/article",
+  "route": "generic",
+  "scraperUsed": "playwright",
+  "title": "",
+  "content": "",
+  "contentLength": 0,
+  "statusCode": 403,
+  "durationMs": 5211,
+  "truncated": false,
+  "error": "Target server returned HTTP 403"
+}
+GET /api/healthz
+
+Lightweight liveness check used by the Replit deployment health system. Returns immediately with no authentication required.
+
+Requires authentication: No
+
+Request: No body, no parameters.
+
+Response:
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+{"status":"ok"}
+GET /api/health
+
+Extended health check with a service label. Also unauthenticated.
+
+Requires authentication: No
+
+Request: No body, no parameters.
+
+Response:
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+{"status":"healthy","service":"PayerNews Scraper"}
+Connecting from Power Automate
+
+In your Power Automate flow, use an HTTP action with:
+
+Setting	Value
+Method	POST
+URI	https://<base-url>/api/scrape
+Headers	Authorization: Bearer @{variables('PayerNewsApiKey')}
+Headers	Content-Type: application/json
+Body	{"url": "@{triggerBody()?['pageUrl']}", "route": "@{triggerBody()?['route']}"}
+Store the API key as a Power Automate Environment Variable or Secure Input — never hard-code it in the flow definition.
+
+The Copilot agent downstream should read outputs('HTTP')?['body']?['content'] for the extracted article text.
+
+Environment Variables & Configuration
+
+These control the server's behaviour. All have sensible defaults — only PAYERNEWS_API_KEY and PORT are required.
+
+Variable	Required	Default	Description
+PAYERNEWS_API_KEY	✅ Yes	(none)	The secret key callers must present in Authorization: Bearer. Stored as a Replit Secret.
+PORT	✅ Yes	(none — server exits if absent)	TCP port the server binds to. Set automatically by Replit (8080 in production).
+SCRAPER_TIMEOUT_MS	No	30000 (30 s)	Maximum time in milliseconds for a single scrape before it is abandoned with a 504 error.
+MAX_REDIRECTS	No	5	Maximum number of HTTP redirects the static engine will follow.
+MAX_BODY_BYTES	No	10485760 (10 MiB)	Maximum raw response body size the fetchers will read before truncating.
+MAX_EXTRACTED_CHARS	No	500000	Maximum character count of the content field. If the extracted text exceeds this, it is sliced and truncated: true is set.
+MIN_MEANINGFUL_CHARS	No	200	Minimum character count for extracted text to be considered meaningful. If the static engine extracts fewer than this many characters, it triggers the Playwright fallback.
+NODE_ENV	No	development	Set to production in deployed environments.
+SSRF Protection (Security)
+
+All URLs are validated before any network connection is made. The following are always blocked, regardless of route or headers:
+
+Private IPv4 ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+Loopback: 127.0.0.0/8, ::1
+Link-local / APIPA: 169.254.0.0/16 (includes the AWS/GCP metadata endpoint 169.254.169.254)
+Other reserved ranges: 0.0.0.0/8, 100.64.0.0/10, 192.0.0.0/24, etc.
+Blocked hostnames by literal: localhost, metadata.google.internal
+Cloud metadata endpoints: 169.254.169.254, fd00:ec2::254
+The DNS validation uses a pinned-IP lookup: the hostname is resolved once, every returned address is checked, and the validated address is pinned to the TCP socket — eliminating DNS rebinding attacks.
+
+If a URL triggers any of these protections, the API returns HTTP 403 with a descriptive error message and never opens a network connection.
+
+Quick-Reference Cheat Sheet
+
+# Health check (no auth needed)
+curl https://<base-url>/api/healthz
+# Scrape a URL (route auto-detected from hostname)
+curl -X POST https://<base-url>/api/scrape \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.cigna.com/health-care-providers/coverage-policy"}'
+# Scrape with explicit route
+curl -X POST https://<base-url>/api/scrape \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://providernews.anthem.com/article-slug","route":"anthem"}'
+# Pretty-print the response (requires jq)
+curl -s -X POST https://<base-url>/api/scrape \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.uhcprovider.com/en/policies.html"}' | jq .
