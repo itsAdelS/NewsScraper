@@ -3,6 +3,16 @@
 # libgbm.so.1 (mesa) and libudev.so.1 (systemd) on NixOS/Replit,
 # then starts the API server.
 
+# Resolve paths relative to this script's location so the script
+# works regardless of which directory the caller runs it from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Tell Playwright where the browser binary lives. The browsers are
+# installed into .playwright-browsers/ (a sibling of src/ and dist/)
+# so they survive into the production container image. The .cache/
+# directory is gitignored and excluded from the Repl layer.
+export PLAYWRIGHT_BROWSERS_PATH="$SCRIPT_DIR/../.playwright-browsers"
+
 for d in /nix/store/*-mesa-libgbm-*/lib; do
   export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   break
@@ -12,9 +22,5 @@ for d in /nix/store/*-systemd-minimal-*/lib; do
   export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   break
 done
-
-# Resolve dist path relative to this script's location so the script
-# works regardless of which directory the caller runs it from.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 exec node --enable-source-maps "$SCRIPT_DIR/../dist/index.mjs"

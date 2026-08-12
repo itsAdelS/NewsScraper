@@ -15,7 +15,11 @@ run = "pnpm --filter @workspace/api-server run dev"
 [services.production]
 
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+# Run the TypeScript build first, then install Playwright's Chromium browser
+# into .playwright-browsers/ (a workspace path captured in the Repl layer).
+# The .cache/ directory is excluded from the production image, so browsers
+# must be stored here via PLAYWRIGHT_BROWSERS_PATH (set in the run script).
+args = ["bash", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/api-server run install-browsers"]
 
 [services.production.build.env]
 NODE_ENV = "production"

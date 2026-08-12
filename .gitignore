@@ -46,4 +46,5 @@ Thumbs.db
 
 # Replit
 .cache/
+artifacts/api-server/.playwright-browsers/
 .local/

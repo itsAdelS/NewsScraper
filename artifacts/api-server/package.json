@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "playwright install chromium",
+    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium",
+    "install-browsers": "PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium",
     "dev": "export NODE_ENV=development && pnpm run build && bash scripts/start-with-libs.sh",
     "build": "node ./build.mjs",
     "start": "bash scripts/start-with-libs.sh",
