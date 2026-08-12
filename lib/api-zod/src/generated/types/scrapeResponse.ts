@@ -5,47 +5,7 @@
  * API specification — PayerNews Scraper
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
-
-export interface PayerNewsHealthStatus {
-  status: string;
-  service: string;
-}
-
-/**
- * Payer routing hint. If omitted, the route is detected from the URL domain, or falls back to "generic".
- */
-export type ScrapeRequestRoute = typeof ScrapeRequestRoute[keyof typeof ScrapeRequestRoute];
-
-
-export const ScrapeRequestRoute = {
-  generic: 'generic',
-  anthem: 'anthem',
-  aetna: 'aetna',
-  uhc: 'uhc',
-  cigna: 'cigna',
-} as const;
-
-export interface ScrapeRequest {
-  /** The webpage URL to scrape. Must be http or https. */
-  url: string;
-  /** Payer routing hint. If omitted, the route is detected from the URL domain, or falls back to "generic". */
-  route?: ScrapeRequestRoute;
-}
-
-/**
- * Which scraping engine produced the result.
- */
-export type ScrapeResponseScraperUsed = typeof ScrapeResponseScraperUsed[keyof typeof ScrapeResponseScraperUsed];
-
-
-export const ScrapeResponseScraperUsed = {
-  static: 'static',
-  playwright: 'playwright',
-  '': '',
-} as const;
+import type { ScrapeResponseScraperUsed } from './scrapeResponseScraperUsed';
 
 /**
  * Returned for every POST /api/scrape call — both success and failure. Always JSON, never HTML.
@@ -76,9 +36,3 @@ export interface ScrapeResponse {
   /** Human-readable error message. Only present when success is false. */
   error?: string;
 }
-
-export interface ErrorResponse {
-  success: boolean;
-  error: string;
-}
-

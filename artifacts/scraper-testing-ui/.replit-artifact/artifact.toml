@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Scraper Testing UI"
+description = "Internal testing interface for the PayerNews Scraper API. Lets the team manually test web scrapes by entering a URL, choosing a payer route, and seeing the full structured scrape result — including extracted content, metadata, and error details — without needing Postman or curl."
+version = "1.0.0"
+id = "artifacts/scraper-testing-ui"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23682
+
+[services.development]
+run = "pnpm --filter @workspace/scraper-testing-ui run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/scraper-testing-ui", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/scraper-testing-ui/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23682"
+BASE_PATH = "/"
