@@ -1,11 +1,19 @@
 import { Router, type IRouter } from "express";
-import { HealthCheckResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
+/**
+ * GET /api/healthz — existing health check (kept for backward compat).
+ */
 router.get("/healthz", (_req, res) => {
-  const data = HealthCheckResponse.parse({ status: "ok" });
-  res.json(data);
+  res.json({ status: "ok" });
+});
+
+/**
+ * GET /api/health — PayerNews Scraper health endpoint as specified.
+ */
+router.get("/health", (_req, res) => {
+  res.json({ status: "healthy", service: "PayerNews Scraper" });
 });
 
 export default router;

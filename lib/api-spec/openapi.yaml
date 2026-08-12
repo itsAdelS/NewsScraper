@@ -3,19 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification — PayerNews Scraper
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: scrape
+    description: Web scraping operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
-      summary: Health check
+      summary: Health check (legacy)
       description: Returns server health status
       responses:
         "200":
@@ -24,7 +26,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /health:
+    get:
+      operationId: payerNewsHealthCheck
+      tags: [health]
+      summary: PayerNews Scraper health check
+      description: Returns service health and identity
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayerNewsHealthStatus"
+
+  /scrape:
+    post:
+      operationId: scrape
+      tags: [scrape]
+      summary: Scrape a payer webpage
+      description: >
+        Visits the supplied URL, extracts meaningful text content, and returns
+        it as structured JSON. Requires a valid Bearer token in the Authorization
+        header. Always returns JSON — never HTML.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScrapeRequest"
+            examples:
+              generic:
+                summary: Generic scrape
+                value:
+                  url: "https://example.com/policy-page"
+              payer_specific:
+                summary: Payer-specific scrape
+                value:
+                  url: "https://anthem.com/policy"
+                  route: "anthem"
+      responses:
+        "200":
+          description: Scrape succeeded — meaningful content extracted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "400":
+          description: Bad request (missing or invalid URL, unsupported scheme)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: URL targets a private/internal network (SSRF protection)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "404":
+          description: Target page returned 404
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "422":
+          description: Page loaded but meaningful content could not be extracted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "500":
+          description: Unexpected scraper error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+        "504":
+          description: Scraper timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResponse"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +133,105 @@ components:
       required:
         - status
 
+    PayerNewsHealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        service:
+          type: string
+          example: PayerNews Scraper
+      required:
+        - status
+        - service
+
+    ScrapeRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The webpage URL to scrape. Must be http or https.
+          example: "https://example.com/policy-page"
+        route:
+          type: string
+          enum: [generic, anthem, aetna, uhc, cigna]
+          description: >
+            Payer routing hint. If omitted, the route is detected from the URL
+            domain, or falls back to "generic".
+          example: generic
+      required:
+        - url
+
+    ScrapeResponse:
+      type: object
+      description: >
+        Returned for every POST /api/scrape call — both success and failure.
+        Always JSON, never HTML.
+      properties:
+        success:
+          type: boolean
+          description: Whether meaningful content was successfully extracted.
+        url:
+          type: string
+          description: The original URL submitted in the request.
+        finalUrl:
+          type: string
+          description: The final URL after following redirects.
+        route:
+          type: string
+          description: The route used (explicit or auto-detected).
+        scraperUsed:
+          type: string
+          enum: [static, playwright, ""]
+          description: Which scraping engine produced the result.
+        title:
+          type: string
+          description: The page <title> text.
+        content:
+          type: string
+          description: >
+            Clean readable text extracted from the page. This is the primary
+            field for downstream AI classification.
+        contentLength:
+          type: integer
+          description: Character count of the content field.
+        statusCode:
+          type: integer
+          description: HTTP status code returned by the target page.
+        durationMs:
+          type: integer
+          description: Total scraper execution time in milliseconds.
+        truncated:
+          type: boolean
+          description: >
+            True if content was truncated to the configured maximum length
+            (default 500,000 characters).
+        error:
+          type: string
+          description: Human-readable error message. Only present when success is false.
+      required:
+        - success
+        - url
+        - finalUrl
+        - route
+        - scraperUsed
+        - title
+        - content
+        - contentLength
+        - statusCode
+        - durationMs
+        - truncated
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+      required:
+        - success
+        - error
