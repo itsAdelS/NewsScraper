@@ -31,6 +31,7 @@
 
 import type { EngineResult } from "./types.js";
 import { BaseScraper, safeFetch } from "./base.js";
+import { UrlValidationError, validateUrl } from "../utils/validation.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -62,6 +63,27 @@ const DEFAULT_CONTENT_TYPES: Record<string, string> = {
 export class BrowserScraper extends BaseScraper {
   async scrape(url: string, requestId: string): Promise<EngineResult> {
     this.log(requestId, "Browser scraper: launching Chromium", { url });
+
+    // ── Pre-flight SSRF validation ──────────────────────────────────────────
+    // Fast-fail before launching the browser for obvious SSRF violations.
+    // This is an optimisation layer; the core SSRF enforcement happens inside
+    // the route handler via safeFetch's pinned-IP lookup for each request.
+    try {
+      await validateUrl(url);
+    } catch (err) {
+      if (err instanceof UrlValidationError) {
+        return {
+          success: false,
+          finalUrl: "",
+          scraperUsed: "playwright",
+          title: "",
+          content: "",
+          statusCode: err.httpStatus,
+          error: err.message,
+        };
+      }
+      throw err;
+    }
 
     let chromium: typeof import("playwright").chromium;
     try {
@@ -111,13 +133,20 @@ export class BrowserScraper extends BaseScraper {
       // ── SSRF interception: Chromium makes zero direct network connections ──
       //
       // Every request is handled here:
-      //   - document / script / stylesheet → fulfilled via safeFetch (our
-      //     SSRF-safe client with pinned-resolution lookup).
+      //   - document / script / stylesheet / xhr / fetch → fulfilled via
+      //     safeFetch (our SSRF-safe client with pinned-resolution lookup).
       //   - everything else → aborted.
       //
       // Because safeFetch uses a custom `lookup` callback that validates IPs
       // before returning them to the TCP layer, DNS rebinding is structurally
       // impossible for all network traffic in this scraper.
+      //
+      // ssrfBlockOccurred is set true when safeFetch throws a UrlValidationError
+      // (genuine SSRF block).  This lets the page.goto error handler correctly
+      // distinguish an SSRF violation from an ordinary network failure so the
+      // error message reflects the real cause.
+      let ssrfBlockOccurred = false;
+
       await page.route("**", async (route) => {
         const reqUrl = route.request().url();
         const resourceType = route.request().resourceType();
@@ -148,19 +177,39 @@ export class BrowserScraper extends BaseScraper {
               body: fetched.html,
             });
           } catch (err) {
+            // Distinguish a genuine SSRF block (UrlValidationError with 403)
+            // from an ordinary network failure (connection refused, timeout,
+            // TLS error, etc.) so the error message surfaced to the caller
+            // accurately reflects the actual failure.
+            const isSsrfBlock =
+              err instanceof UrlValidationError && err.httpStatus === 403;
+
             logger.warn(
               {
                 requestId,
                 reqUrl,
                 resourceType,
                 error: err instanceof Error ? err.message : String(err),
+                ssrfBlock: isSsrfBlock,
               },
-              "Browser scraper: safeFetch blocked or failed; aborting resource",
+              isSsrfBlock
+                ? "Browser scraper: SSRF protection blocked resource"
+                : "Browser scraper: network error fetching resource; aborting",
             );
-            await route.abort("addressunreachable");
+
+            if (isSsrfBlock) {
+              ssrfBlockOccurred = true;
+              // Use addressunreachable so page.goto throws net::ERR_ADDRESS_UNREACHABLE,
+              // which the error handler below recognises as an SSRF block.
+              await route.abort("addressunreachable");
+            } else {
+              // Use 'failed' (generic network error) so the page.goto error
+              // handler can surface the real cause instead of blaming SSRF.
+              await route.abort("failed");
+            }
           }
         } else {
-          // Abort all other resource types (XHR, fetch, image, media, font …)
+          // Abort all other resource types (image, media, font, WebSocket …)
           // so page JS cannot probe internal endpoints via Chromium's resolver.
           await route.abort("blockedbyclient");
         }
@@ -207,14 +256,28 @@ export class BrowserScraper extends BaseScraper {
           msg.toLowerCase().includes("addressunreachable") ||
           msg.toLowerCase().includes("net::err")
         ) {
+          // Only label as SSRF if the route handler confirmed a UrlValidationError.
+          // Generic network failures (connection refused, TLS error, DNS failure)
+          // use the same Playwright error codes but should not be reported as SSRF.
+          if (ssrfBlockOccurred) {
+            return {
+              success: false,
+              finalUrl: "",
+              scraperUsed: "playwright",
+              title: "",
+              content: "",
+              statusCode: 403,
+              error: `Navigation blocked by SSRF protection: ${msg}`,
+            };
+          }
           return {
             success: false,
             finalUrl: "",
             scraperUsed: "playwright",
             title: "",
             content: "",
-            statusCode: 403,
-            error: `Navigation blocked by SSRF protection: ${msg}`,
+            statusCode: 502,
+            error: `Navigation failed: ${msg}`,
           };
         }
         throw navErr;

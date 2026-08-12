@@ -53,6 +53,13 @@ export interface SafeFetchResult {
 }
 
 /**
+ * Validated address entry returned by ssrfSafeLookup when options.all is true.
+ * Matches the shape of `dns.LookupAddress` so Node.js's Happy Eyeballs
+ * implementation can race IPv4 and IPv6 connections.
+ */
+type LookupAddressEntry = { address: string; family: number };
+
+/**
  * Custom `lookup` function compatible with `http.request` / `https.request`.
  *
  * Node.js passes this function the hostname it needs to resolve before
@@ -61,11 +68,16 @@ export interface SafeFetchResult {
  * address — it never calls the OS resolver again for this connection.
  *
  * This is the critical piece that closes the DNS-rebinding TOCTOU gap.
+ *
+ * Node.js v22+ passes options.all = true (Happy Eyeballs / dual-stack) and
+ * expects the callback to receive an array of {address, family} objects.
+ * Node.js v18–v21 passes options.all = false (or omits it) and expects a
+ * single string address.  We handle both forms.
  */
 function ssrfSafeLookup(
   rawHostname: string,
-  _options: { family?: number; hints?: number; all?: boolean; verbatim?: boolean },
-  callback: (err: Error | null, address: string, family: number) => void,
+  options: { family?: number; hints?: number; all?: boolean; verbatim?: boolean },
+  callback: (err: Error | null, address: string | LookupAddressEntry[], family: number) => void,
 ): void {
   // Strip IPv6 brackets: new URL("http://[::1]/").hostname returns "[::1]"
   // but http.request also strips them before calling lookup — handle both.
@@ -93,7 +105,12 @@ function ssrfSafeLookup(
       );
       return;
     }
-    callback(null, hostname, ipVersion);
+    // Return in the format the caller expects.
+    if (options.all) {
+      callback(null, [{ address: hostname, family: ipVersion }], 0);
+    } else {
+      callback(null, hostname, ipVersion);
+    }
     return;
   }
 
@@ -115,9 +132,16 @@ function ssrfSafeLookup(
         return;
       }
 
-      // Return the first valid address.  Node.js uses this for the TCP socket.
-      const selected = validRecords[0];
-      callback(null, selected.address, selected.family);
+      // Node.js v22+ (Happy Eyeballs) calls with options.all = true and
+      // expects an array of {address, family} objects so it can race
+      // IPv4 and IPv6 connections.  Older versions expect a single string.
+      if (options.all) {
+        // Return all valid addresses; family = 0 means "mixed" per Node.js convention.
+        callback(null, validRecords, 0);
+      } else {
+        const selected = validRecords[0];
+        callback(null, selected.address, selected.family);
+      }
     })
     .catch((err: unknown) => {
       callback(
