@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "postinstall": "playwright install chromium",
+    "dev": "export NODE_ENV=development && for d in /nix/store/*-mesa-libgbm-*/lib; do export LD_LIBRARY_PATH=\"$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"; break; done && for d in /nix/store/*-systemd-minimal-*/lib; do export LD_LIBRARY_PATH=\"$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"; break; done && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

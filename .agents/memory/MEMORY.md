@@ -1,0 +1,1 @@
+- [Playwright Chromium on Replit NixOS](playwright-nix-libs.md) — libgbm.so.1 + libudev.so.1 missing; fix via mesa/systemd Nix packages + LD_LIBRARY_PATH glob in dev script.
