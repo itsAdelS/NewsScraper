@@ -1,0 +1,639 @@
+Build a production-oriented web scraping API for an internal project called PayerNews Scraper.
+
+Purpose
+
+This service will replace Microsoft Power Automate Desktop browser scraping.
+
+Microsoft Power Automate will send this API a payer webpage URL. The API should visit the webpage, extract the meaningful webpage content, remove navigation/boilerplate where practical, and return the scraped content as JSON.
+
+Power Automate will then send the returned content to a separate Copilot agent for classification.
+
+Do not perform AI classification inside this scraper.
+
+The scraper’s responsibility is only:
+
+1. Receive a URL.
+2. Determine how that webpage should be scraped.
+3. Scrape the webpage.
+4. Extract useful content.
+5. Return a predictable JSON response.
+6. Log enough diagnostic information to troubleshoot failures.
+
+⸻
+
+API
+
+Create this endpoint:
+
+POST /api/scrape
+
+It must accept JSON in this format:
+
+{
+  "url": "https://example.com/policy-page",
+  "route": "generic"
+}
+
+The url field is required.
+
+The route field is optional.
+
+If no route is supplied, default to generic.
+
+Power Automate should be able to call this endpoint with a standard HTTP POST action.
+
+⸻
+
+Successful Response
+
+Return HTTP 200 with JSON in this format:
+
+{
+  "success": true,
+  "url": "https://example.com/policy-page",
+  "finalUrl": "https://example.com/policy-page",
+  "route": "generic",
+  "scraperUsed": "static",
+  "title": "Page Title",
+  "content": "Extracted meaningful webpage text...",
+  "contentLength": 12345,
+  "statusCode": 200,
+  "durationMs": 1842
+}
+
+content is the most important field.
+
+It should contain clean readable text suitable for sending directly to an AI model.
+
+⸻
+
+Failed Response
+
+Failures should still return predictable JSON.
+
+Example:
+
+{
+  "success": false,
+  "url": "https://example.com/policy-page",
+  "finalUrl": "",
+  "route": "generic",
+  "scraperUsed": "",
+  "title": "",
+  "content": "",
+  "contentLength": 0,
+  "statusCode": 500,
+  "durationMs": 1200,
+  "error": "Unable to extract meaningful webpage content"
+}
+
+Use appropriate HTTP status codes such as:
+
+* 400 for malformed requests
+* 401 for authentication failure
+* 403 when the target site denies access
+* 404 when appropriate
+* 422 when a page loads but meaningful content cannot be extracted
+* 500 for unexpected scraper errors
+* 504 for scraper timeout
+
+Never return an HTML error page to Power Automate.
+
+Always return JSON.
+
+⸻
+
+Scraping Architecture
+
+Use a modular architecture.
+
+Suggested structure:
+
+/app
+  main.py
+  config.py
+  models.py
+  security.py
+/scrapers
+  base.py
+  generic.py
+  browser.py
+  anthem.py
+  aetna.py
+  uhc.py
+  cigna.py
+/utils
+  cleanup.py
+  validation.py
+  logging.py
+
+You can adjust the structure if there is a better engineering approach.
+
+Use Python with FastAPI unless there is a compelling technical reason to use another stack.
+
+⸻
+
+Scraping Strategy
+
+The service should support two major scraping methods.
+
+Method 1 — Static HTTP Scraper
+
+This should be the default and fastest option.
+
+Use an HTTP library such as:
+
+* httpx
+* requests
+
+and an HTML parser such as:
+
+* BeautifulSoup
+
+The static scraper should:
+
+1. Request the supplied URL.
+2. Follow redirects.
+3. Capture the final URL.
+4. Detect response status.
+5. Parse the returned HTML.
+6. Remove obvious non-content elements.
+7. Extract meaningful text.
+
+Remove elements such as:
+
+* script
+* style
+* noscript
+* SVG
+* repetitive navigation
+* headers when they contain only site navigation
+* footers when they contain boilerplate
+* cookie banners
+* accessibility widgets
+* repeated menu text
+
+Do NOT aggressively remove content that might contain policy information.
+
+Favor keeping questionable content rather than accidentally deleting payer policy information.
+
+⸻
+
+Method 2 — Browser Scraper
+
+Use Playwright with headless Chromium for webpages that require JavaScript rendering.
+
+The browser scraper should:
+
+1. Launch Chromium headlessly.
+2. Navigate to the supplied URL.
+3. Follow redirects.
+4. Wait for the page to become usable.
+5. Allow JavaScript content to render.
+6. Extract meaningful text.
+7. Close browser resources cleanly.
+
+Use reasonable timeout limits so a failed site cannot leave a request running indefinitely.
+
+The browser scraper should NOT rely solely on networkidle because some modern websites continuously make network requests.
+
+Use a combination of:
+
+* DOM loaded
+* reasonable short wait
+* presence of meaningful page content
+
+⸻
+
+Automatic Fallback
+
+For the generic route, use this strategy:
+
+Static scraper
+      ↓
+Did we extract meaningful content?
+      ↓
+YES → return content
+NO
+      ↓
+Playwright browser scraper
+      ↓
+Did we extract meaningful content?
+      ↓
+YES → return content
+NO → return structured failure
+
+The API response must identify which scraper ultimately worked:
+
+"scraperUsed": "static"
+
+or:
+
+"scraperUsed": "playwright"
+
+⸻
+
+Meaningful Content Detection
+
+Do not consider a scrape successful merely because some HTML text was returned.
+
+Detect common failure conditions such as pages containing primarily:
+
+* Access Denied
+* Forbidden
+* Error
+* Page Not Found
+* JavaScript required messages
+* cookie/legal boilerplate
+* navigation menus
+* blank content
+* bot protection pages
+* CAPTCHA/challenge pages
+
+Create a reasonable minimum-content heuristic.
+
+For example, extremely short extracted content should trigger browser fallback or failure.
+
+Do not classify the payer article itself. This check is only intended to identify obviously unusable scraping results.
+
+⸻
+
+Route Support
+
+The request can optionally provide:
+
+{
+  "route": "anthem"
+}
+
+Create a scraper routing system.
+
+Initially support:
+
+* generic
+* anthem
+* aetna
+* uhc
+* cigna
+
+These payer-specific modules can initially inherit most behavior from the generic scraper.
+
+The important part right now is establishing the architecture so payer-specific extraction rules can be added later.
+
+Example conceptual routing:
+
+SCRAPERS = {
+    "generic": GenericScraper,
+    "anthem": AnthemScraper,
+    "aetna": AetnaScraper,
+    "uhc": UHCScraper,
+    "cigna": CignaScraper
+}
+
+Do not duplicate large amounts of generic logic in every payer scraper.
+
+Use inheritance, composition, shared helpers, or another clean modular pattern.
+
+⸻
+
+Automatic Domain Routing
+
+Also create the ability to determine a payer route from the URL domain.
+
+Examples:
+
+anthem.com → anthem
+aetna.com → aetna
+uhcprovider.com → uhc
+unitedhealthcareonline.com → uhc
+cigna.com → cigna
+
+Explicitly supplied route should take priority.
+
+Otherwise attempt domain detection.
+
+If no payer is recognized, use generic.
+
+Keep the domain mapping easy to modify.
+
+⸻
+
+Text Cleanup
+
+The extracted content should be plain readable text.
+
+Preserve useful structure using line breaks.
+
+For example:
+
+Medical Policy Update
+Effective September 1, 2026
+Beginning September 1, prior authorization will be required...
+Affected CPT Codes
+12345
+67890
+
+Do not return enormous amounts of unnecessary HTML.
+
+Do not convert everything into one giant unbroken line.
+
+Normalize excessive whitespace.
+
+Preserve headings, paragraphs, lists, tables and useful label/value relationships when reasonably possible.
+
+Tables are especially important because payer policy pages frequently contain:
+
+* CPT codes
+* HCPCS codes
+* effective dates
+* policy names
+* reimbursement changes
+* state information
+
+Convert HTML tables into readable plain text rather than discarding them.
+
+⸻
+
+Request Security
+
+This endpoint must not become an unrestricted public web proxy.
+
+Protect it with an API key.
+
+Power Automate will send something similar to:
+
+Authorization: Bearer SECRET_API_KEY
+
+Store the API key as a Replit Secret/environment variable.
+
+For example:
+
+PAYERNEWS_API_KEY
+
+Never hard-code the key into the repository.
+
+Return HTTP 401 for invalid or missing credentials.
+
+⸻
+
+SSRF Protection
+
+Because callers can supply arbitrary URLs, implement server-side request forgery protection.
+
+Only allow:
+
+* https://
+* optionally http:// if needed later
+
+Reject URLs targeting:
+
+* localhost
+* 127.0.0.1
+* private IP ranges
+* link-local IP addresses
+* cloud metadata endpoints
+* internal network resources
+* unsupported URI schemes such as file://, ftp://, etc.
+
+Resolve DNS safely before making requests and block private/internal destinations.
+
+This API will eventually operate in a business environment, so URL validation is important.
+
+⸻
+
+Redirect Security
+
+When following redirects, validate the redirected destination as well.
+
+Do not validate only the original URL.
+
+A public URL must not be able to redirect the scraper to an internal/private network address.
+
+⸻
+
+Limits
+
+Implement reasonable safeguards.
+
+Suggested starting limits:
+
+* Maximum scraper execution time: approximately 30 seconds
+* Maximum redirects: 5
+* Maximum response body size: reasonable limit such as 10 MB
+* Maximum extracted text returned: approximately 500,000 characters
+
+Make these configurable.
+
+If content is truncated, return:
+
+"truncated": true
+
+Otherwise:
+
+"truncated": false
+
+⸻
+
+Logging
+
+Create useful structured logs for every scrape.
+
+Log:
+
+* timestamp
+* request ID
+* URL
+* domain
+* route
+* scraper attempted
+* HTTP status
+* final URL
+* extracted character count
+* duration
+* fallback events
+* error reason
+
+Never log the API secret.
+
+Example:
+
+Request 8ef21
+Route: anthem
+URL: https://...
+Static request: HTTP 200
+Static extraction: 317 characters
+Content insufficient
+Falling back to Playwright
+Playwright extraction: 18,421 characters
+SUCCESS
+Duration: 2941ms
+
+This should make troubleshooting much easier than Power Automate Desktop.
+
+⸻
+
+Health Endpoint
+
+Create:
+
+GET /api/health
+
+Return:
+
+{
+  "status": "healthy",
+  "service": "PayerNews Scraper"
+}
+
+This endpoint does not need to scrape anything.
+
+⸻
+
+Test Endpoint / Interface
+
+Create a simple internal testing interface in the Replit app.
+
+It should allow me to:
+
+1. Enter a webpage URL.
+2. Optionally select a route.
+3. Click “Scrape.”
+4. View:
+    * success/failure
+    * title
+    * route
+    * scraper used
+    * HTTP status
+    * execution time
+    * extracted character count
+    * final URL
+    * extracted content
+
+The testing UI should call the exact same scraper service/API code used by Power Automate so tests accurately reflect production behavior.
+
+Do not build a separate fake/demo scraping implementation.
+
+⸻
+
+Initial Test Cases
+
+Create automated tests for:
+
+1. Missing URL.
+2. Invalid URL.
+3. Unsupported URL scheme.
+4. Missing API key.
+5. Invalid API key.
+6. Valid public HTML page.
+7. Redirected page.
+8. Empty page.
+9. 404 response.
+10. Static scrape success.
+11. Static scrape failure followed by Playwright fallback.
+12. Both scraping methods failing.
+13. localhost SSRF attempt.
+14. private IP SSRF attempt.
+15. domain-based route selection.
+
+⸻
+
+Power Automate Compatibility
+
+The primary consumer of this API is Microsoft Power Automate.
+
+Design responses so Power Automate can easily reference:
+
+body('HTTP_-_Scrape_Page')?['success']
+body('HTTP_-_Scrape_Page')?['content']
+body('HTTP_-_Scrape_Page')?['title']
+body('HTTP_-_Scrape_Page')?['route']
+body('HTTP_-_Scrape_Page')?['scraperUsed']
+
+Avoid deeply nested response structures unless necessary.
+
+⸻
+
+Existing Downstream Classification
+
+Do NOT reproduce this logic in the scraper, but understand that the extracted content will ultimately be passed to another agent that produces this schema:
+
+{
+  "PayerName": "",
+  "State": "",
+  "PolicyTitle": "",
+  "EffectiveDate": "",
+  "ChangeType": "",
+  "ChangeDetails": "",
+  "ImpactedCodes": [],
+  "ActionRequired": "",
+  "Audience": "",
+  "PageType": "",
+  "Reason": ""
+}
+
+That downstream agent classifies pages as:
+
+* Structured Policy Update
+* Article
+* Needs Review
+
+Because of this, prioritize retaining substantive payer content over making the extracted text artificially short.
+
+The scraper should provide the downstream agent enough context to make that classification accurately.
+
+⸻
+
+Important Design Principle
+
+Keep these responsibilities separate:
+
+SCRAPER
+Extract what the webpage says.
+COPILOT AGENT
+Interpret and classify what the webpage says.
+POWER AUTOMATE
+Orchestrate the process and write results to SharePoint.
+
+Do not add an LLM or AI dependency to this scraper.
+
+⸻
+
+Development Approach
+
+Implement this incrementally.
+
+First establish:
+
+1. FastAPI application.
+2. /api/health.
+3. API-key authentication.
+4. /api/scrape.
+5. URL validation.
+6. Static generic scraping.
+7. Clean JSON responses.
+8. Testing UI.
+
+Once that works, add:
+
+9. Playwright.
+10. Automatic static → Playwright fallback.
+11. Payer routing.
+12. Payer-specific scraper modules.
+13. Better content cleanup.
+14. Structured logging.
+15. Automated tests.
+
+Do not overengineer payer-specific extraction before the generic scraper has been verified.
+
+When complete, show me:
+
+* the API endpoint URL
+* the API request format
+* the required authorization header
+* a successful sample response
+* a failed sample response
+* where the API secret should be configured
+* how to test the API manually from the Replit interface
+* any Replit deployment configuration required for Playwright/Chromium
+
+Do not modify unrelated projects or functionality.
