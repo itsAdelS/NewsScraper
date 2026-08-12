@@ -32,8 +32,7 @@ export const PayerNewsHealthCheckResponse = zod.object({
  * @summary Scrape a payer webpage
  */
 export const ScrapeBody = zod.object({
-  // zod.string().url() used instead of zod.url() for Zod v3 compatibility
-  "url": zod.string().url().describe('The webpage URL to scrape. Must be http or https.'),
+  "url": zod.url().describe('The webpage URL to scrape. Must be http or https.'),
   "route": zod.enum(['generic', 'anthem', 'aetna', 'uhc', 'cigna']).optional().describe('Payer routing hint. If omitted, the route is detected from the URL domain, or falls back to \"generic\".\n')
 })
 
@@ -45,10 +44,9 @@ export const ScrapeResponse = zod.object({
   "scraperUsed": zod.enum(['static', 'playwright', '']).describe('Which scraping engine produced the result.'),
   "title": zod.string().describe('The page <title> text.'),
   "content": zod.string().describe('Clean readable text extracted from the page. This is the primary field for downstream AI classification.\n'),
-  // zod.number().int() used instead of zod.int() for Zod v3 compatibility
-  "contentLength": zod.number().int().describe('Character count of the content field.'),
-  "statusCode": zod.number().int().describe('HTTP status code returned by the target page.'),
-  "durationMs": zod.number().int().describe('Total scraper execution time in milliseconds.'),
+  "contentLength": zod.int().describe('Character count of the content field.'),
+  "statusCode": zod.int().describe('HTTP status code returned by the target page.'),
+  "durationMs": zod.int().describe('Total scraper execution time in milliseconds.'),
   "truncated": zod.boolean().describe('True if content was truncated to the configured maximum length (default 500,000 characters).\n'),
   "error": zod.string().optional().describe('Human-readable error message. Only present when success is false.')
 }).describe('Returned for every POST \/api\/scrape call — both success and failure. Always JSON, never HTML.\n')
