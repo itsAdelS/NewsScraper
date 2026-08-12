@@ -15,7 +15,7 @@ export function ScrapeForm({ onSubmit, isPending }: { onSubmit: (url: string, ro
       setError('Please enter a URL');
       return;
     }
-    const key = sessionStorage.getItem('payernews_api_key');
+    const key = localStorage.getItem('payernews_api_key');
     if (!key) {
       setError('API key is missing. Please enter your API key in the top right header.');
       return;

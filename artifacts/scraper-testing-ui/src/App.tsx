@@ -13,7 +13,7 @@ import {
 } from 'wouter';
 import { setAuthTokenGetter } from '@workspace/api-client-react';
 
-setAuthTokenGetter(() => sessionStorage.getItem('payernews_api_key'));
+setAuthTokenGetter(() => localStorage.getItem('payernews_api_key'));
 
 const queryClient = new QueryClient();
 

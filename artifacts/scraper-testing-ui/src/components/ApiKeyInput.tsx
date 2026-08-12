@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Eye, EyeOff, Key } from 'lucide-react';
+import { Eye, EyeOff, Key, X } from 'lucide-react';
 
 export function ApiKeyInput() {
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('payernews_api_key') || '');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('payernews_api_key') || '');
   const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
-    sessionStorage.setItem('payernews_api_key', apiKey);
+    if (apiKey) {
+      localStorage.setItem('payernews_api_key', apiKey);
+    } else {
+      localStorage.removeItem('payernews_api_key');
+    }
   }, [apiKey]);
 
   return (
@@ -32,6 +36,17 @@ export function ApiKeyInput() {
           {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
       </div>
+      {apiKey && (
+        <button
+          type="button"
+          onClick={() => setApiKey('')}
+          className="text-muted-foreground hover:text-destructive p-1 rounded-md transition-colors"
+          data-testid="button-clear-key"
+          title="Clear saved API key"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }
