@@ -13,4 +13,8 @@ for d in /nix/store/*-systemd-minimal-*/lib; do
   break
 done
 
-exec node --enable-source-maps ./dist/index.mjs
+# Resolve dist path relative to this script's location so the script
+# works regardless of which directory the caller runs it from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+exec node --enable-source-maps "$SCRIPT_DIR/../dist/index.mjs"
