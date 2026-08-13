@@ -17,7 +17,25 @@ export function HealthIndicator() {
     );
   }
 
-  if (isError || data?.status !== 'healthy') {
+  if (isError || !data) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-destructive font-medium" data-testid="status-health-offline">
+        <div className="w-2 h-2 rounded-full bg-destructive" />
+        Offline
+      </div>
+    );
+  }
+
+  if (data.status === 'degraded') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-warning font-medium" data-testid="status-health-degraded" title="Browser pool is near capacity">
+        <div className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+        Pool Near Capacity
+      </div>
+    );
+  }
+
+  if (data.status !== 'healthy') {
     return (
       <div className="flex items-center gap-2 text-sm text-destructive font-medium" data-testid="status-health-offline">
         <div className="w-2 h-2 rounded-full bg-destructive" />

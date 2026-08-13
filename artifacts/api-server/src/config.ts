@@ -45,6 +45,15 @@ export const config = {
     process.env.PLAYWRIGHT_MAX_QUEUE ?? "20",
     10,
   ),
+
+  /**
+   * Fraction of `playwrightMaxContexts` at which the pool is considered
+   * "near capacity".  When `active / maxContexts >= poolWarnThreshold` the
+   * health endpoint returns `status: "degraded"` and a warning is logged.
+   *
+   * Accepts any value in (0, 1].  Default: 0.8 (warn at 80% utilisation).
+   */
+  poolWarnThreshold: parseFloat(process.env.POOL_WARN_THRESHOLD ?? "0.8"),
 } as const;
 
 /** User-agent string sent with all scraper HTTP requests. */
