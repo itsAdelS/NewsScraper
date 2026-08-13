@@ -71,6 +71,25 @@ class BrowserPool {
   private active = 0;
 
   /**
+   * Monotonically-increasing counter bumped on every unexpected browser crash.
+   *
+   * Each acquired context slot is tagged with the generation that was current
+   * when `active` was incremented for it.  `release()` looks up the context's
+   * generation via `contextGeneration` and only calls `returnSlot()` when the
+   * generation still matches — orphaned contexts from a crashed generation are
+   * silently discarded instead of decrementing `active` below zero.
+   */
+  private generation = 0;
+
+  /**
+   * Maps each live BrowserContext to the generation that owns its slot.
+   *
+   * Set when the context is created inside `acquire()`; deleted when
+   * `release()` is called.  WeakMap so closed / GC-ed contexts don't leak.
+   */
+  private readonly contextGeneration = new WeakMap<BrowserContext, number>();
+
+  /**
    * Waiters blocked on a full semaphore.
    * Each entry is { resolve, reject } for the Promise inside acquire().
    */
@@ -148,9 +167,28 @@ class BrowserPool {
         // Detect unexpected disconnection (crash / OOM kill).
         b.on("disconnected", () => {
           if (this.browser === b) {
-            logger.warn("Browser pool: Chromium disconnected unexpectedly");
+            logger.warn(
+              { active: this.active, queued: this.queue.length },
+              "Browser pool: Chromium disconnected unexpectedly — resetting pool",
+            );
             this.browser = null;
             this.launching = null;
+            this.cancelIdleTimer();
+
+            // Bump the generation so that in-flight requests' finally-block
+            // release() calls are recognised as orphans and discarded rather
+            // than decrementing `active` below zero.
+            this.generation++;
+            this.active = 0;
+
+            // Reject every queued waiter so callers don't hang indefinitely.
+            const pending = this.queue.splice(0);
+            const crashErr = new Error(
+              "Browser pool: Chromium disconnected unexpectedly",
+            );
+            for (const { reject } of pending) {
+              reject(crashErr);
+            }
           }
         });
 
@@ -197,7 +235,9 @@ class BrowserPool {
       await new Promise<void>((resolve, reject) => {
         this.queue.push({ resolve, reject });
       });
-      // Slot was inherited from the releasing context; `active` is unchanged.
+      // The releasing context already decremented `active` (see returnSlot).
+      // Re-increment now that we officially own the slot.
+      this.active++;
     } else {
       // ── Both full: reject ──
       logger.warn(
@@ -207,18 +247,35 @@ class BrowserPool {
       throw new BrowserPoolFullError();
     }
 
+    // Capture the generation AFTER active++ so we know which crash epoch owns
+    // this slot.  This value is used both in the error path (to decide whether
+    // to returnSlot) and stored on the context (to validate release() calls).
+    const slotGeneration = this.generation;
+
     // Slot is held — create the context.
     // On any failure, release the slot so the pool does not leak.
     try {
       const browser = await this.getOrLaunchBrowser();
       const ctx = await browser.newContext(CONTEXT_OPTIONS);
+
+      // If a crash occurred during the async operations above, the generation
+      // has been bumped and `active` was reset to 0.  Our original active++
+      // was wiped, so re-register this context under the current generation.
+      if (this.generation !== slotGeneration) {
+        this.active++;
+      }
+
+      this.contextGeneration.set(ctx, this.generation);
       logger.debug(
         { active: this.active, queued: this.queue.length },
         "Browser pool: context acquired",
       );
       return ctx;
     } catch (err) {
-      this.returnSlot();
+      // Only return the slot if no crash wiped it; otherwise active is already 0.
+      if (this.generation === slotGeneration) {
+        this.returnSlot();
+      }
       throw err;
     }
   }
@@ -233,27 +290,45 @@ class BrowserPool {
     } catch (err) {
       logger.warn({ err }, "Browser pool: error closing context");
     }
-    this.returnSlot();
+
+    const ctxGen = this.contextGeneration.get(context);
+    this.contextGeneration.delete(context);
+
+    if (ctxGen === this.generation) {
+      // Normal path: context belongs to the current generation.
+      this.returnSlot();
+    } else {
+      // Orphan: context was created under a now-crashed browser generation.
+      // The crash handler already reset active; do not decrement it again.
+      logger.debug(
+        { ctxGen, currentGeneration: this.generation },
+        "Browser pool: discarding release from crashed generation",
+      );
+    }
   }
 
   /**
-   * Internal: hand the freed slot to the next queued waiter, or decrement
-   * the active count and start the idle timer when all slots are free.
+   * Internal: decrement active and hand the freed slot to the next queued
+   * waiter (if any), or start the idle timer when all slots are free.
+   *
+   * Note: unlike the original "inheritance" approach, returnSlot always
+   * decrements `active`.  Waiters re-increment it when they resume after
+   * the queue promise resolves.  This ensures the crash handler's `active=0`
+   * reset is never undone by a late returnSlot from a pre-crash context.
    */
   private returnSlot(): void {
+    this.active--;
+    logger.debug(
+      { active: this.active },
+      "Browser pool: context released",
+    );
+
     const next = this.queue.shift();
     if (next) {
-      // Pass the slot directly to the next waiter — active stays the same.
+      // Signal the waiter — it will do its own active++ on resume.
       next.resolve();
-    } else {
-      this.active--;
-      logger.debug(
-        { active: this.active },
-        "Browser pool: context released",
-      );
-      if (this.active === 0 && !this.shuttingDown) {
-        this.scheduleIdleShutdown();
-      }
+    } else if (this.active === 0 && !this.shuttingDown) {
+      this.scheduleIdleShutdown();
     }
   }
 

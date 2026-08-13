@@ -27,6 +27,7 @@
  *  [C] Queued state — health endpoint reports accurate queued count while
  *                     requests wait for a free slot
  *  [D] Recovery     — counts return to zero after all contexts are released
+ *  [F] Disconnect   — active resets to 0 and queued waiters are rejected on crash
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -44,14 +45,17 @@ import type { BrowserPool } from "../scrapers/browser-pool.js";
  * optionally inspect it.
  */
 function makeFakeBrowser() {
-  const fakeContext = { close: vi.fn().mockResolvedValue(undefined) };
   const fakeBrowser = {
     isConnected: vi.fn().mockReturnValue(true),
-    newContext: vi.fn().mockResolvedValue(fakeContext),
+    // Each call returns a NEW distinct context object so that WeakMap entries
+    // don't collide when multiple contexts are held simultaneously.
+    newContext: vi.fn().mockImplementation(() =>
+      Promise.resolve({ close: vi.fn().mockResolvedValue(undefined) }),
+    ),
     close: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
   };
-  return { fakeBrowser, fakeContext };
+  return { fakeBrowser };
 }
 
 /**
@@ -81,7 +85,19 @@ async function buildTestEnv(maxContexts = 2) {
   const app = express();
   app.use("/api", healthRouter);
 
-  return { pool: pool as BrowserPool, app };
+  return { pool: pool as BrowserPool, app, fakeBrowser };
+}
+
+/**
+ * Fire the "disconnected" event that the pool registered on the browser.
+ * The pool calls `b.on("disconnected", handler)` — we grab that handler
+ * from the `on` spy and invoke it directly to simulate a crash.
+ */
+function simulateDisconnect(fakeBrowser: ReturnType<typeof makeFakeBrowser>["fakeBrowser"]): void {
+  const calls = fakeBrowser.on.mock.calls as Array<[string, () => void]>;
+  const disconnectedCall = calls.find(([event]) => event === "disconnected");
+  if (!disconnectedCall) throw new Error("No 'disconnected' listener registered on fake browser");
+  disconnectedCall[1]();
 }
 
 // ---------------------------------------------------------------------------
@@ -292,5 +308,138 @@ describe("GET /api/health — real router wired to real pool (playwright mocked)
 
     const res = await request(app).get("/api/health");
     expect(res.headers["content-type"]).toMatch(/application\/json/);
+  });
+
+  // ── [F] Disconnect / crash recovery ────────────────────────────────────────
+
+  it("[F] active resets to 0 after Chromium disconnects unexpectedly", async () => {
+    let fakeBrowser: ReturnType<typeof makeFakeBrowser>["fakeBrowser"];
+    ({ pool, app, fakeBrowser } = await buildTestEnv(/* maxContexts= */ 2));
+
+    // Hold two contexts so active === 2.
+    const ctx1 = await pool.acquire();
+    const ctx2 = await pool.acquire();
+
+    let res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(2);
+
+    // Simulate an OOM kill / unexpected disconnect.
+    simulateDisconnect(fakeBrowser);
+
+    // active must be reset immediately — no release() calls needed.
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(0);
+    expect(res.body.browserPool.browserRunning).toBe(false);
+
+    // Production finally blocks call release() on orphaned contexts.
+    // active must stay at 0 (not go negative) after these late returns.
+    await pool.release(ctx1);
+    await pool.release(ctx2);
+
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(0);
+  });
+
+  it("[F] queued waiters are rejected (not left hanging) after a browser crash", async () => {
+    let fakeBrowser: ReturnType<typeof makeFakeBrowser>["fakeBrowser"];
+    ({ pool, app, fakeBrowser } = await buildTestEnv(/* maxContexts= */ 2));
+
+    // Fill the pool so the next acquire parks in the queue.
+    const ctx1 = await pool.acquire();
+    const ctx2 = await pool.acquire();
+
+    // Start a waiter — it will sit in the queue because the pool is full.
+    const pendingAcquire = pool.acquire();
+    await Promise.resolve(); // let it reach the queue
+
+    // Confirm it is queued.
+    let res = await request(app).get("/api/health");
+    expect(res.body.browserPool.queued).toBe(1);
+
+    // Simulate a crash — the waiter must be rejected, not left indefinitely.
+    simulateDisconnect(fakeBrowser);
+
+    await expect(pendingAcquire).rejects.toThrow(
+      /disconnected unexpectedly/i,
+    );
+
+    // After the crash, the queue must be drained.
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.queued).toBe(0);
+    expect(res.body.browserPool.active).toBe(0);
+
+    // Production finally blocks release orphaned contexts — active must stay 0.
+    await pool.release(ctx1);
+    await pool.release(ctx2);
+
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(0);
+  });
+
+  it("[F] new context acquired and released before orphan releases: active stays correct", async () => {
+    // This is the key interleaving scenario: crash with 2 old contexts, then a
+    // new request runs to completion (acquire + release), and THEN the old
+    // finally blocks call release() on the orphaned contexts.
+    // The global-absorber (discardedSlots) approach incorrectly lets the new
+    // release consume a discard credit; the generation-aware approach must not.
+    let fakeBrowser: ReturnType<typeof makeFakeBrowser>["fakeBrowser"];
+    ({ pool, app, fakeBrowser } = await buildTestEnv(/* maxContexts= */ 2));
+
+    const ctx1 = await pool.acquire();
+    const ctx2 = await pool.acquire();
+
+    simulateDisconnect(fakeBrowser);
+
+    // New request on the fresh browser (active should go 0→1→0).
+    const newCtx = await pool.acquire();
+    let res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(1);
+
+    await pool.release(newCtx);
+
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(0);
+
+    // Now the orphaned finally blocks run — active must remain 0.
+    await pool.release(ctx1);
+    await pool.release(ctx2);
+
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(0);
+  });
+
+  it("[F] concurrency cap is respected on new requests after crash + orphan releases", async () => {
+    let fakeBrowser: ReturnType<typeof makeFakeBrowser>["fakeBrowser"];
+    ({ pool, app, fakeBrowser } = await buildTestEnv(/* maxContexts= */ 2));
+
+    // Acquire two contexts, then crash.
+    const ctx1 = await pool.acquire();
+    const ctx2 = await pool.acquire();
+    simulateDisconnect(fakeBrowser);
+
+    // Orphaned releases from pre-crash finally blocks (BEFORE any new work).
+    await pool.release(ctx1);
+    await pool.release(ctx2);
+
+    // Pool is now at active=0.  Acquire up to the cap on a fresh browser.
+    const newCtx1 = await pool.acquire();
+    const newCtx2 = await pool.acquire();
+
+    let res = await request(app).get("/api/health");
+    expect(res.body.browserPool.active).toBe(2);
+
+    // A third acquire must queue (cap is 2).
+    const pendingAcquire = pool.acquire();
+    await Promise.resolve();
+
+    res = await request(app).get("/api/health");
+    expect(res.body.browserPool.queued).toBe(1);
+    expect(res.body.browserPool.active).toBe(2);
+
+    // Clean up.
+    await pool.release(newCtx1);
+    const newCtx3 = await pendingAcquire;
+    await pool.release(newCtx2);
+    await pool.release(newCtx3);
   });
 });
