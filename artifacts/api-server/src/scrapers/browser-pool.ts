@@ -296,3 +296,6 @@ class BrowserPool {
 
 /** Singleton instance shared across all scrape requests in this process. */
 export const browserPool = new BrowserPool();
+
+// Export the class so unit tests can create isolated instances.
+export { BrowserPool };
