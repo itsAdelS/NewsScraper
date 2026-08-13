@@ -6,7 +6,20 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export interface PayerNewsHealthStatusBrowserPool {
+  active: number;
+  queued: number;
+  browserRunning: boolean;
+  maxContexts: number;
+  maxQueue: number;
+  /** Pool utilisation as a percentage (0-100). */
+  utilisation: number;
+  /** The utilisation percentage at which status becomes degraded. */
+  warnThresholdPct: number;
+}
+
 export interface PayerNewsHealthStatus {
   status: string;
   service: string;
+  browserPool?: PayerNewsHealthStatusBrowserPool;
 }

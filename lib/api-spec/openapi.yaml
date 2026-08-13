@@ -142,6 +142,38 @@ components:
         service:
           type: string
           example: PayerNews Scraper
+        browserPool:
+          type: object
+          properties:
+            active:
+              type: integer
+              description: Number of browser contexts currently in use.
+            queued:
+              type: integer
+              description: Number of requests waiting for a free context.
+            browserRunning:
+              type: boolean
+              description: Whether the Playwright browser process is alive.
+            maxContexts:
+              type: integer
+              description: Configured maximum number of concurrent browser contexts.
+            maxQueue:
+              type: integer
+              description: Configured maximum queue depth before requests are rejected.
+            utilisation:
+              type: integer
+              description: Pool utilisation as a percentage (0-100).
+            warnThresholdPct:
+              type: integer
+              description: The utilisation percentage at which status becomes degraded.
+          required:
+            - active
+            - queued
+            - browserRunning
+            - maxContexts
+            - maxQueue
+            - utilisation
+            - warnThresholdPct
       required:
         - status
         - service
