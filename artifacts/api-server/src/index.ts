@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { browserPool } from "./scrapers/browser-pool";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,24 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+});
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Close the shared Chromium browser before the process exits so no orphan
+// processes remain after a restart or deployment swap.
+async function gracefulShutdown(signal: string): Promise<void> {
+  logger.info({ signal }, "Server shutting down — draining browser pool");
+  try {
+    await browserPool.shutdown();
+  } catch (err) {
+    logger.warn({ err }, "Error during browser pool shutdown");
+  }
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => {
+  void gracefulShutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  void gracefulShutdown("SIGINT");
 });

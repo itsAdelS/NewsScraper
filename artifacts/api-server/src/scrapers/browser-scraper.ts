@@ -22,6 +22,13 @@
  *   not by Chromium.  There is no category of resource for which Chromium
  *   makes an independent DNS query or TCP connection.
  *
+ * Concurrency:
+ *   Chromium contexts are managed by the singleton `browserPool`.  One
+ *   long-lived Chromium process is shared; each request gets its own context
+ *   (separate cookies, storage, network state).  The pool enforces a
+ *   concurrency cap and queues excess requests.  If the queue is also full,
+ *   `BrowserPoolFullError` is thrown (the route handler maps this to HTTP 503).
+ *
  * Browser sandbox:
  *   `--no-sandbox` / `--disable-setuid-sandbox` are only applied when the
  *   process is running as root (the case in most Linux containers, including
@@ -32,6 +39,7 @@
 import type { EngineResult } from "./types.js";
 import { BaseScraper, safeFetch } from "./base.js";
 import { UrlValidationError, validateUrl } from "../utils/validation.js";
+import { browserPool } from "./browser-pool.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -62,10 +70,10 @@ const DEFAULT_CONTENT_TYPES: Record<string, string> = {
 
 export class BrowserScraper extends BaseScraper {
   async scrape(url: string, requestId: string): Promise<EngineResult> {
-    this.log(requestId, "Browser scraper: launching Chromium", { url });
+    this.log(requestId, "Browser scraper: acquiring Chromium context", { url });
 
     // ── Pre-flight SSRF validation ──────────────────────────────────────────
-    // Fast-fail before launching the browser for obvious SSRF violations.
+    // Fast-fail before acquiring a pool slot for obvious SSRF violations.
     // This is an optimisation layer; the core SSRF enforcement happens inside
     // the route handler via safeFetch's pinned-IP lookup for each request.
     try {
@@ -85,49 +93,13 @@ export class BrowserScraper extends BaseScraper {
       throw err;
     }
 
-    let chromium: typeof import("playwright").chromium;
-    try {
-      const playwright = await import("playwright");
-      chromium = playwright.chromium;
-    } catch {
-      return {
-        success: false,
-        finalUrl: "",
-        scraperUsed: "playwright",
-        title: "",
-        content: "",
-        statusCode: 0,
-        error: "Playwright is not available in this environment",
-      };
-    }
-
-    // Only disable the sandbox when running as root (container environments).
-    // When running as a non-root user the full Chromium sandbox is used.
-    const isRoot =
-      typeof process.getuid === "function" && process.getuid() === 0;
-    const sandboxArgs = isRoot
-      ? ["--no-sandbox", "--disable-setuid-sandbox"]
-      : [];
-
-    const browser = await chromium.launch({
-      headless: true,
-      args: [
-        ...sandboxArgs,
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
-    });
+    // ── Acquire a context from the shared pool ──────────────────────────────
+    // The pool launches Chromium lazily and reuses the same process across
+    // all concurrent requests.  BrowserPoolFullError is NOT caught here —
+    // it propagates to the route handler which maps it to HTTP 503.
+    const context = await browserPool.acquire();
 
     try {
-      const context = await browser.newContext({
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        ignoreHTTPSErrors: false,
-        // Block service workers: they register their own fetch handler and
-        // bypass page.route() interception, creating a SSRF bypass path.
-        serviceWorkers: "block",
-      });
-
       const page = await context.newPage();
 
       // ── SSRF interception: Chromium makes zero direct network connections ──
@@ -313,7 +285,8 @@ export class BrowserScraper extends BaseScraper {
 
       return result;
     } finally {
-      await browser.close();
+      // Always return the context to the pool, regardless of success or failure.
+      await browserPool.release(context);
     }
   }
 }

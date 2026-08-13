@@ -24,6 +24,27 @@ export const config = {
    * or reports failure.
    */
   minMeaningfulChars: parseInt(process.env.MIN_MEANINGFUL_CHARS ?? "200", 10),
+
+  /**
+   * Maximum number of Playwright browser contexts that may be open at once.
+   * Requests beyond this cap wait in a queue rather than launching a new
+   * Chromium process.  Tune based on available memory (each context uses
+   * roughly 50–100 MB on top of the shared Chromium process).
+   */
+  playwrightMaxContexts: parseInt(
+    process.env.PLAYWRIGHT_MAX_CONTEXTS ?? "4",
+    10,
+  ),
+
+  /**
+   * Maximum number of requests that may wait in the browser-pool queue.
+   * If this is exceeded, the API returns HTTP 503.  Set high enough that
+   * normal burst traffic queues without being rejected.
+   */
+  playwrightQueueLimit: parseInt(
+    process.env.PLAYWRIGHT_MAX_QUEUE ?? "20",
+    10,
+  ),
 } as const;
 
 /** User-agent string sent with all scraper HTTP requests. */

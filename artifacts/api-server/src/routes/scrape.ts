@@ -9,6 +9,7 @@ import { Router, type IRouter } from "express";
 import { requireApiKey } from "../middleware/auth.js";
 import { resolveRoute, getScraper } from "../scrapers/registry.js";
 import { validateUrl, UrlValidationError } from "../utils/validation.js";
+import { BrowserPoolFullError } from "../scrapers/browser-pool.js";
 import { config } from "../config.js";
 import type { ScrapeRequestBody, ScrapeResponseBody } from "../scrapers/types.js";
 import { logger } from "../lib/logger.js";
@@ -58,9 +59,18 @@ router.post("/scrape", requireApiKey, async (req, res) => {
   try {
     result = await scraper.scrape(rawUrl, requestId);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
     const durationMs = Date.now() - startMs;
 
+    // Browser pool is at capacity — return 503 so Power Automate can retry.
+    if (err instanceof BrowserPoolFullError) {
+      logger.warn({ requestId, url: rawUrl, route, durationMs }, "Browser pool full — returning 503");
+      res.status(503).json(
+        errorResponse(rawUrl, route, "", durationMs, err.message),
+      );
+      return;
+    }
+
+    const msg = err instanceof Error ? err.message : String(err);
     logger.error({ requestId, url: rawUrl, route, error: msg, durationMs }, "Scraper threw unexpected error");
 
     res.status(500).json(
