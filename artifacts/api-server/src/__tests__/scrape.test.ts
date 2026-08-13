@@ -336,12 +336,19 @@ describe("POST /api/scrape", () => {
     expect(body).toHaveProperty("truncated");
   });
 
-  it("GET /api/health returns service identity", async () => {
+  it("GET /api/health returns service identity and browser pool stats", async () => {
     const res = await request(app).get("/api/health");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       status: "healthy",
       service: "PayerNews Scraper",
+    });
+    expect(res.body.browserPool).toMatchObject({
+      active: expect.any(Number),
+      queued: expect.any(Number),
+      browserRunning: expect.any(Boolean),
+      maxContexts: expect.any(Number),
+      maxQueue: expect.any(Number),
     });
   });
 });
