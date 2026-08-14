@@ -1,0 +1,520 @@
+openapi: 3.0.3
+
+info:
+  title: PayerNews Scraper API
+  version: 1.0.0
+  description: |
+    Accepts a payer webpage URL, scrapes it, extracts clean plain text, and
+    returns structured JSON. Built to replace Microsoft Power Automate Desktop
+    scraping steps — Power Automate POSTs a URL and reads the `content` field
+    downstream in a Microsoft Copilot agent.
+
+    ## Two-tier scraping pipeline
+
+    1. **Static engine** — lightweight HTTPS fetch + cheerio. Fast (< 1 s).
+    2. **Playwright / Chromium fallback** — full headless browser for
+       JavaScript-rendered pages (React, Angular, Vue). 3–10 s.
+
+    The server selects the engine automatically. Chromium contexts are pooled
+    (one shared process, up to 4 concurrent contexts) so concurrent requests
+    queue rather than spawning new browser processes.
+
+    ## SSRF protection
+
+    All URLs are validated before any network connection is made. Private IP
+    ranges, loopback, link-local (including `169.254.169.254`), and known cloud
+    metadata endpoints are **always blocked** and return HTTP 403.
+
+  contact:
+    name: PayerNews Engineering
+
+servers:
+  - url: https://{deploymentDomain}/api
+    description: Production (Replit Deploy)
+    variables:
+      deploymentDomain:
+        default: your-deployment-domain.replit.app
+        description: >
+          The domain assigned when you publish via Replit Deploy.
+          Found in the deployment settings after publishing.
+  - url: https://{devDomain}/api
+    description: Development (Replit preview)
+    variables:
+      devDomain:
+        default: your-repl.pike.replit.dev
+        description: >
+          Session-specific domain visible in the Replit preview dropdown.
+          Changes if the workspace is restarted.
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+security:
+  - bearerAuth: []   # applied globally; overridden to [] on health endpoints
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        API key stored as the `PAYERNEWS_API_KEY` Replit Secret.
+        Pass it in every scrape request as `Authorization: Bearer <key>`.
+
+  # ── Reusable schemas ──────────────────────────────────────────────────────
+  schemas:
+
+    RouteValue:
+      type: string
+      enum: [generic, anthem, aetna, uhc, cigna]
+      description: |
+        Selects a payer-specific extraction strategy.
+
+        | Value     | Payer                    | Auto-detected from hostname                                                                  |
+        |-----------|--------------------------|----------------------------------------------------------------------------------------------|
+        | `generic` | Any / unknown            | Default when no domain matches                                                               |
+        | `anthem`  | Anthem / Elevance Health | `anthem.com`, `elevancehealth.com`, `anthembluecross.com` (and all subdomains)               |
+        | `aetna`   | Aetna / CVS Health       | `aetna.com`, `cvs.com` (and all subdomains)                                                  |
+        | `uhc`     | UnitedHealth Group       | `uhc.com`, `uhcprovider.com`, `unitedhealthcareonline.com`, `optum.com` (and all subdomains) |
+        | `cigna`   | Cigna / Evernorth        | `cigna.com`, `evernorth.com`, `cignaforhcp.com` (and all subdomains)                        |
+
+    ScrapeRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: >
+            Full URL of the payer webpage to scrape. Must be `http://` or
+            `https://`. Must resolve to a public (non-private) IP address.
+          example: https://providernews.anthem.com/california/articles/some-article-slug
+        route:
+          $ref: '#/components/schemas/RouteValue'
+          description: >
+            Optional. Payer-specific scraper to use. If omitted or
+            unrecognised, auto-detected from the URL hostname. Defaults to
+            `generic` when no hostname match is found.
+
+    ScrapeResponse:
+      type: object
+      required:
+        - success
+        - url
+        - finalUrl
+        - route
+        - scraperUsed
+        - title
+        - content
+        - contentLength
+        - statusCode
+        - durationMs
+        - truncated
+      properties:
+        success:
+          type: boolean
+          description: >
+            `true` if the page was fetched and meaningful text was extracted.
+            `false` if scraping failed for any reason.
+        url:
+          type: string
+          format: uri
+          description: The original URL submitted in the request.
+        finalUrl:
+          type: string
+          description: >
+            URL after all redirects. May differ from `url` if the target
+            server issued a redirect. Empty string on failure.
+        route:
+          $ref: '#/components/schemas/RouteValue'
+          description: Effective route used (after auto-detection).
+        scraperUsed:
+          type: string
+          enum: [static, playwright, '']
+          description: >
+            Engine that produced the result. Empty string if the request
+            failed before scraping began.
+        title:
+          type: string
+          description: >
+            Cleaned page `<title>` text. Empty string on failure.
+        content:
+          type: string
+          description: >
+            Extracted plain text — HTML tags stripped, boilerplate removed,
+            whitespace normalised. This is the field your Copilot agent reads.
+            Empty string on failure.
+        contentLength:
+          type: integer
+          description: Character count of `content`.
+        statusCode:
+          type: integer
+          description: >
+            HTTP status code returned by the **target server** (e.g. `200`,
+            `403`, `404`). `0` if the request failed before a response was
+            received.
+        durationMs:
+          type: integer
+          description: Total elapsed time in milliseconds for the scrape.
+        truncated:
+          type: boolean
+          description: >
+            `true` if `content` was cut at the 500,000-character limit.
+            Increase `MAX_EXTRACTED_CHARS` to raise the limit.
+        error:
+          type: string
+          description: >
+            Present only when `success` is `false`. Human-readable description
+            of what went wrong.
+
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+          description: Human-readable error message.
+
+    HealthzResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+
+    BrowserPoolStats:
+      type: object
+      required:
+        - active
+        - queued
+        - browserRunning
+        - maxContexts
+        - maxQueue
+        - utilisation
+        - warnThresholdPct
+      properties:
+        active:
+          type: integer
+          description: Number of Chromium contexts currently open.
+        queued:
+          type: integer
+          description: Number of requests waiting for a free context slot.
+        browserRunning:
+          type: boolean
+          description: Whether the shared Chromium process is currently alive.
+        maxContexts:
+          type: integer
+          description: Maximum simultaneous contexts (env `PLAYWRIGHT_MAX_CONTEXTS`, default 4).
+        maxQueue:
+          type: integer
+          description: Maximum queue depth before requests are rejected with 503 (env `PLAYWRIGHT_MAX_QUEUE`, default 20).
+        utilisation:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: >
+            `active / maxContexts` as a fraction (0–1). Values ≥ the
+            warn threshold indicate the pool is under heavy load.
+        warnThresholdPct:
+          type: integer
+          description: >
+            Pool utilisation percentage at which the health status changes
+            from `healthy` to `degraded`. Configurable via
+            `POOL_WARN_THRESHOLD_PCT` (default 80).
+
+    HealthResponse:
+      type: object
+      required: [status, service, browserPool]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+          description: >
+            `degraded` when pool utilisation is at or above `warnThresholdPct`.
+        service:
+          type: string
+          example: PayerNews Scraper
+        browserPool:
+          $ref: '#/components/schemas/BrowserPoolStats'
+
+  # ── Reusable responses ────────────────────────────────────────────────────
+  responses:
+
+    Unauthorized:
+      description: Missing, malformed, or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Invalid or missing API key"
+
+    SsrfForbidden:
+      description: >
+        URL blocked by SSRF protection — resolves to a private IP, loopback,
+        link-local address, or known cloud metadata endpoint.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Requests to private or reserved IP addresses are not permitted"
+
+    ServiceUnavailable:
+      description: >
+        Browser pool queue is full. Too many concurrent Playwright scrapes are
+        in progress. Retry after a short delay (recommended: exponential
+        backoff starting at 2 s).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Suggested seconds before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Too many concurrent scrape requests — try again shortly"
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  /scrape:
+    post:
+      operationId: scrapeUrl
+      summary: Scrape a payer webpage
+      description: |
+        Fetches the given URL, extracts clean plain text, and returns
+        structured JSON. Authentication is required.
+
+        The server tries the **static engine** first (fast). If the extracted
+        text is below the minimum meaningful threshold it falls back to
+        **Playwright** (slower, handles JS-rendered pages).
+
+        All requests are SSRF-protected — private IPs and metadata endpoints
+        are blocked before any network connection is made.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScrapeRequest'
+            examples:
+              anthemWithRoute:
+                summary: Anthem article with explicit route
+                value:
+                  url: https://providernews.anthem.com/california/articles/some-article-slug
+                  route: anthem
+              uhcAutoDetect:
+                summary: UHC page — route auto-detected from hostname
+                value:
+                  url: https://www.uhcprovider.com/en/resource-library/policies.html
+              aetna:
+                summary: Aetna clinical policy page
+                value:
+                  url: https://www.aetna.com/health-care-professionals/clinical-policy.html
+                  route: aetna
+      responses:
+        '200':
+          description: Page scraped and meaningful text extracted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapeResponse'
+              example:
+                success: true
+                url: https://www.aetna.com/health-care-professionals/clinical-policy.html
+                finalUrl: https://www.aetna.com/health-care-professionals/clinical-policy.html
+                route: aetna
+                scraperUsed: static
+                title: "Clinical Policy Bulletins | Aetna"
+                content: "Clinical Policy Bulletins\nAetna considers medically necessary..."
+                contentLength: 14832
+                statusCode: 200
+                durationMs: 612
+                truncated: false
+        '400':
+          description: >
+            `url` field is missing, not a string, or is not a valid `http://`
+            or `https://` URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "url must be a non-empty string"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/SsrfForbidden'
+        '404':
+          description: Target server returned HTTP 404.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapeResponse'
+              example:
+                success: false
+                url: https://example.com/missing-page
+                finalUrl: https://example.com/missing-page
+                route: generic
+                scraperUsed: static
+                title: ''
+                content: ''
+                contentLength: 0
+                statusCode: 404
+                durationMs: 310
+                truncated: false
+                error: "Target server returned HTTP 404"
+        '413':
+          description: Request body exceeds the server limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: >
+            Scrape ran but failed — bot detection, connection refused, empty
+            content, or any other non-timeout, non-SSRF failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapeResponse'
+              example:
+                success: false
+                url: https://some-payer-site.com/article
+                finalUrl: https://some-payer-site.com/article
+                route: generic
+                scraperUsed: playwright
+                title: ''
+                content: ''
+                contentLength: 0
+                statusCode: 403
+                durationMs: 5211
+                truncated: false
+                error: "Target server returned HTTP 403"
+        '500':
+          description: Unexpected internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          description: >
+            Scrape timed out. The target server did not respond within
+            `SCRAPER_TIMEOUT_MS` (default 30 s). Retry with exponential
+            backoff; some payer sites are intermittently slow.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapeResponse'
+              example:
+                success: false
+                url: https://slow-payer-site.com/article
+                finalUrl: ''
+                route: generic
+                scraperUsed: playwright
+                title: ''
+                content: ''
+                contentLength: 0
+                statusCode: 504
+                durationMs: 30012
+                truncated: false
+                error: "Browser navigation timed out"
+
+  /healthz:
+    get:
+      operationId: getLiveness
+      summary: Liveness probe
+      description: >
+        Minimal liveness check used by Replit's deployment health system.
+        Returns immediately. No authentication required. Use this endpoint
+        for load-balancer or uptime-monitor health checks.
+      security: []
+      responses:
+        '200':
+          description: Server is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthzResponse'
+              example:
+                status: ok
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Extended health check with browser pool metrics
+      description: >
+        Returns service status plus live browser pool diagnostics. Useful for
+        monitoring dashboards and for checking pool load before submitting
+        high-volume scrape batches. No authentication required.
+
+        The `status` field is `degraded` when the pool utilisation percentage
+        reaches or exceeds `warnThresholdPct` (default 80 %) — this is an
+        early warning, not an outage.
+      security: []
+      responses:
+        '200':
+          description: Health and pool diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                idle:
+                  summary: Server idle — no active Playwright scrapes
+                  value:
+                    status: healthy
+                    service: PayerNews Scraper
+                    browserPool:
+                      active: 0
+                      queued: 0
+                      browserRunning: false
+                      maxContexts: 4
+                      maxQueue: 20
+                      utilisation: 0
+                      warnThresholdPct: 80
+                underLoad:
+                  summary: Pool at 75 % utilisation (below warn threshold)
+                  value:
+                    status: healthy
+                    service: PayerNews Scraper
+                    browserPool:
+                      active: 3
+                      queued: 0
+                      browserRunning: true
+                      maxContexts: 4
+                      maxQueue: 20
+                      utilisation: 0.75
+                      warnThresholdPct: 80
+                degraded:
+                  summary: Pool at or above warn threshold — degraded status
+                  value:
+                    status: degraded
+                    service: PayerNews Scraper
+                    browserPool:
+                      active: 4
+                      queued: 5
+                      browserRunning: true
+                      maxContexts: 4
+                      maxQueue: 20
+                      utilisation: 1
+                      warnThresholdPct: 80
