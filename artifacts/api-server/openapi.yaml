@@ -29,15 +29,22 @@ info:
     name: PayerNews Engineering
 
 servers:
-  - url: https://payernews.replit.app/api
+  - url: https://{deploymentDomain}/api
     description: Production
+    variables:
+      deploymentDomain:
+        default: payernews.replit.app
+        description: >
+          The domain assigned when you publish via Replit Deploy.
+          Found in the deployment settings after publishing.
   - url: https://{devDomain}/api
-    description: Development (Replit preview — session-specific, changes on restart)
+    description: Development (Replit preview)
     variables:
       devDomain:
         default: your-repl.pike.replit.dev
         description: >
           Session-specific domain visible in the Replit preview dropdown.
+          Changes if the workspace is restarted.
 
 # ---------------------------------------------------------------------------
 # Security
