@@ -1,0 +1,714 @@
+Add a secure, internal-only admin console to the existing PayerNews Scraper application.
+
+Critical Requirement
+
+Do not change the existing behavior or response contract of:
+
+* POST /api/scrape
+* GET /health
+* GET /healthz
+
+The scraper API is already working correctly in Power Automate.
+
+This task should add observability and administrative UI around the existing scraper without breaking or restructuring the production scraping path.
+
+⸻
+
+Existing Health Endpoints
+
+The application currently exposes:
+
+GET /health
+
+Example response:
+
+{
+  "status": "healthy",
+  "service": "PayerNews Scraper",
+  "browserPool": {
+    "active": 0,
+    "queued": 0,
+    "browserRunning": false,
+    "maxContexts": 4,
+    "maxQueue": 20,
+    "utilisation": 0,
+    "warnThresholdPct": 80
+  }
+}
+
+And:
+
+GET /healthz
+
+Example response:
+
+{
+  "status": "ok"
+}
+
+Reuse these existing metrics where appropriate rather than creating duplicate browser-pool state.
+
+⸻
+
+Goal
+
+Create a secure admin area accessible at:
+
+/admin
+
+Users who are not authenticated must be redirected to:
+
+/admin/login
+
+The admin console is intended for a scraper administrator to:
+
+* monitor scraper health
+* monitor Playwright/browser pool utilization
+* review recent API requests
+* review successes and failures
+* inspect scraper performance
+* see queue pressure
+* pause/resume incoming scrape work if needed
+* diagnose problems without reading raw server logs
+
+The admin console must not be publicly accessible without authentication.
+
+⸻
+
+Authentication
+
+Implement a proper login page for the admin area.
+
+Route:
+
+GET /admin/login
+
+The page should contain:
+
+* Username
+* Password
+* Sign In button
+* Clear invalid-login message
+* Simple professional styling matching the scraper application
+
+For the initial implementation, credentials may be configured using environment variables / Replit Secrets.
+
+Use:
+
+ADMIN_USERNAME
+ADMIN_PASSWORD_HASH
+SESSION_SECRET
+
+Do not store the plaintext password in source code.
+
+Prefer storing a securely hashed password rather than a plaintext password environment variable.
+
+Use an established password hashing library such as bcrypt or Argon2.
+
+Do not log passwords.
+
+Do not return passwords through any API.
+
+⸻
+
+Session Security
+
+Use secure server-side or signed cookie-based sessions.
+
+Authentication should work like:
+
+/admin/login
+      ↓
+Successful authentication
+      ↓
+Create authenticated session
+      ↓
+Redirect to /admin
+
+The authenticated session should protect all routes under:
+
+/admin/*
+
+except:
+
+/admin/login
+
+Add:
+
+POST /admin/logout
+
+Logout should invalidate the current session and redirect back to /admin/login.
+
+Configure cookies with appropriate security settings such as:
+
+* HttpOnly
+* SameSite=Lax or stricter
+* Secure when running over HTTPS
+
+Sessions should expire after a reasonable period of inactivity.
+
+Suggested initial timeout:
+
+8 hours
+
+Make this configurable.
+
+⸻
+
+Brute Force Protection
+
+Protect the admin login against repeated password attempts.
+
+Implement basic rate limiting such as:
+
+* Maximum 5 failed attempts within 15 minutes per IP
+* Temporarily reject further attempts during the lockout period
+
+Do not reveal whether the username or password was incorrect.
+
+Use a generic message such as:
+
+Invalid username or password.
+
+⸻
+
+Admin Dashboard
+
+Create:
+
+GET /admin
+
+The dashboard should have a clean operations-console layout.
+
+At the top show a clear service status:
+
+PayerNews Scraper
+Healthy
+
+Use the existing health/browser-pool state.
+
+⸻
+
+Dashboard Metrics
+
+Display cards for:
+
+Service Health
+
+* Overall status
+* Browser running: Yes / No
+* Last health refresh
+
+Browser Pool
+
+Display:
+
+* Active contexts
+* Maximum contexts
+* Queued jobs
+* Maximum queue
+* Current utilization percentage
+* Warning threshold
+
+For the current configuration this may display:
+
+Active: 0 / 4
+Queued: 0 / 20
+Utilization: 0%
+Warning threshold: 80%
+Browser running: No
+
+Add a visual utilization bar.
+
+Suggested status levels:
+
+0–59%     Healthy
+60–79%    Elevated
+80–89%    Warning
+90–100%   Critical
+
+Do not change the underlying warnThresholdPct setting merely for UI purposes.
+
+⸻
+
+Scrape Statistics
+
+Track and display:
+
+* Scrapes today
+* Scrapes in the last 24 hours
+* Scrapes this week
+* Successful scrapes
+* Failed scrapes
+* Success rate
+* Static scraper successes
+* Playwright scraper successes
+* Playwright fallback rate
+* Average scrape duration
+* Median scrape duration if practical
+* Longest scrape duration
+* Current active requests
+* Current queued requests
+
+If no historical data exists yet, display zero values gracefully.
+
+⸻
+
+Scrape Request Logging
+
+Add persistent request-history logging.
+
+Each scrape request should generate a unique request ID.
+
+Example:
+
+PN-20260815-A38F91
+
+or use a UUID if preferred.
+
+Record at minimum:
+
+* Request ID
+* Timestamp
+* Source URL
+* Final URL
+* Domain
+* Route
+* Scraper used
+* HTTP status
+* Success / Failure
+* Extracted content length
+* Duration in milliseconds
+* Whether static scraping succeeded
+* Whether Playwright fallback occurred
+* Error message if failed
+* Queue depth when request began
+* Active browser contexts when request began
+
+Do not store bearer tokens, authorization headers, passwords, API keys, or other secrets.
+
+⸻
+
+Persistence
+
+Persist scrape-history data so it survives application restarts.
+
+Use an appropriate lightweight database.
+
+SQLite is acceptable for the initial implementation if compatible with the current Replit deployment architecture.
+
+If the project already has a database abstraction or persistent database, reuse it instead of introducing unnecessary duplication.
+
+Do not store full scraped page content by default.
+
+For the admin console, metadata is sufficient.
+
+Optional:
+
+Store a short diagnostic preview of extracted content such as the first 500 characters, but only if helpful.
+
+Do not store full payer-page text unless explicitly configured later.
+
+⸻
+
+Recent Scrapes Table
+
+On /admin, display a recent activity table.
+
+Columns:
+
+Time
+Request ID
+Payer / Domain
+Route
+Result
+Scraper
+Duration
+Content Length
+
+Example:
+
+11:02 PM | PN-... | anthem.com | anthem | Success | static     | 1.2s | 18,421
+11:01 PM | PN-... | uhc.com    | uhc    | Success | playwright | 4.8s | 23,812
+10:57 PM | PN-... | aetna.com  | aetna  | Failed  | playwright | 30s  | 0
+
+Allow users to click a row to see request details.
+
+⸻
+
+Request Detail Page
+
+Create:
+
+GET /admin/requests/{request_id}
+
+Display:
+
+* Request ID
+* Timestamp
+* Original URL
+* Final URL
+* Domain
+* Route
+* Scraper used
+* Success / failure
+* HTTP status
+* Duration
+* Content length
+* Static scrape result
+* Playwright fallback status
+* Queue state when started
+* Error message
+* Any useful diagnostic metadata
+
+Do not expose secrets.
+
+If a content preview is retained, display only the limited preview.
+
+⸻
+
+Search and Filters
+
+Add simple controls to the request-history page.
+
+Allow filtering by:
+
+* Success
+* Failure
+* Static
+* Playwright
+* Domain
+* Route
+
+Allow searching by:
+
+* Request ID
+* URL
+* Domain
+
+Add pagination if the log grows large.
+
+Do not load thousands of records into the browser at once.
+
+⸻
+
+Error Dashboard
+
+Create a section or page for failures.
+
+Suggested route:
+
+/admin/errors
+
+Show recent failed scrape attempts with:
+
+* timestamp
+* request ID
+* domain
+* URL
+* error
+* status
+* scraper attempted
+* duration
+
+Provide quick filtering by domain and error type.
+
+⸻
+
+Queue Monitoring
+
+The admin console should use the existing browser pool state:
+
+{
+  "active": 0,
+  "queued": 0,
+  "browserRunning": false,
+  "maxContexts": 4,
+  "maxQueue": 20,
+  "utilisation": 0,
+  "warnThresholdPct": 80
+}
+
+Display queue pressure prominently.
+
+If utilization reaches or exceeds warnThresholdPct, show a warning banner.
+
+Example:
+
+WARNING
+Browser queue utilization is 85%.
+17 of 20 queue slots are currently occupied.
+
+If the queue is nearly full, display a critical warning.
+
+⸻
+
+Admin Controls
+
+Add an administrative controls section.
+
+At minimum:
+
+Pause New Scrape Requests
+
+Allow the administrator to temporarily prevent new scrape jobs from being accepted.
+
+When paused, /api/scrape should return a controlled response such as HTTP 503:
+
+{
+  "success": false,
+  "status": "paused",
+  "error": "Scraping is temporarily paused by administrator.",
+  "retryAfterSeconds": 300
+}
+
+Important:
+
+Existing active or queued jobs should continue processing.
+
+This action should stop only new incoming scrape requests.
+
+Resume Scraping
+
+Allow the administrator to resume accepting new requests.
+
+Drain Mode
+
+If practical, implement a drain mode:
+
+Stop accepting new jobs
+Continue processing currently queued/active jobs
+
+Clearly distinguish this from deleting queued jobs.
+
+⸻
+
+Do Not Add a Destructive Flush Yet
+
+Do not initially create a button that deletes all queued scrape jobs.
+
+I want queue draining rather than silently discarding valid Power Automate requests.
+
+A destructive flush mechanism can be considered later if necessary.
+
+⸻
+
+Control Safety
+
+Administrative actions such as Pause, Resume, or Drain must:
+
+* require authentication
+* use POST requests
+* include CSRF protection or an equivalent safety mechanism
+* require an intentional button click
+* display the resulting state clearly
+
+Do not make state-changing admin controls accessible via GET requests.
+
+⸻
+
+API Status Endpoint
+
+Add an authenticated or appropriately protected endpoint such as:
+
+GET /api/admin/status
+
+Return useful dashboard information:
+
+{
+  "serviceStatus": "healthy",
+  "acceptingRequests": true,
+  "mode": "normal",
+  "browserPool": {
+    "active": 2,
+    "queued": 8,
+    "maxContexts": 4,
+    "maxQueue": 20,
+    "utilisation": 40,
+    "warnThresholdPct": 80
+  },
+  "statistics": {
+    "scrapesToday": 52,
+    "successesToday": 50,
+    "failuresToday": 2,
+    "staticSuccessesToday": 45,
+    "playwrightSuccessesToday": 5,
+    "averageDurationMs": 1834
+  }
+}
+
+This endpoint should reuse existing internal metrics rather than maintaining separate competing state.
+
+⸻
+
+Dashboard Refresh
+
+The admin dashboard should refresh operational metrics without requiring a full page reload.
+
+Polling every approximately 5–10 seconds is acceptable.
+
+Do not poll excessively.
+
+Historical request tables do not need to refresh constantly.
+
+⸻
+
+Queue Alerting Foundation
+
+Add an alert-status layer but do not tightly couple email sending to the scraper yet.
+
+Track states such as:
+
+healthy
+warning
+critical
+recovered
+
+Suggested initial thresholds:
+
+warning:
+utilisation >= warnThresholdPct
+critical:
+utilisation >= 90%
+recovered:
+utilisation falls below 60% after being warning/critical
+
+Record alert-state transitions in the application logs.
+
+Design this so a Power Automate flow, webhook, or email service could consume alerts later.
+
+Do not repeatedly emit the same warning every few seconds.
+
+Implement an alert cooldown/state-change mechanism.
+
+⸻
+
+Optional Alert Endpoint
+
+If useful, expose:
+
+GET /api/admin/alerts
+
+Return:
+
+{
+  "currentState": "healthy",
+  "utilisation": 25,
+  "queued": 5,
+  "maxQueue": 20,
+  "lastStateChange": "2026-08-15T23:10:00Z"
+}
+
+Protect this appropriately.
+
+This can later be checked by Power Automate to send email or Teams notifications.
+
+⸻
+
+UI Design
+
+The admin UI should look like an internal operations console rather than a marketing website.
+
+Use:
+
+* clean cards
+* clear typography
+* responsive layout
+* readable tables
+* obvious status indicators
+* simple navigation
+
+Navigation:
+
+Dashboard
+Requests
+Errors
+Controls
+Logout
+
+Keep it functional and professional.
+
+Avoid unnecessary animations or excessive visual effects.
+
+⸻
+
+Security Boundary
+
+The public API bearer token and admin login are separate authentication mechanisms.
+
+Do not use the scraper API bearer token as the admin password.
+
+Conceptually:
+
+Power Automate
+     ↓
+Bearer API authentication
+     ↓
+/api/scrape
+
+while:
+
+Administrator
+     ↓
+Username + password
+     ↓
+Authenticated session
+     ↓
+/admin
+
+These should remain separate security boundaries.
+
+⸻
+
+Existing API Compatibility
+
+Again, do not break the current Power Automate integration.
+
+Existing requests to:
+
+POST /api/scrape
+
+must continue accepting the same request body and returning the same response format currently used by Power Automate.
+
+Instrumentation should wrap around existing scraping logic rather than replacing the working scraper implementation.
+
+⸻
+
+Database Retention
+
+Prevent the logs database from growing forever.
+
+Add configurable retention.
+
+Suggested default:
+
+30 days
+
+Create a safe cleanup process for records older than the configured retention period.
+
+Make retention configurable with something like:
+
+LOG_RETENTION_DAYS=30
+
+⸻
+
+Final Deliverables
+
+When complete, show me:
+
+1. /admin/login
+2. /admin
+3. How to configure ADMIN_USERNAME
+4. How to create/configure ADMIN_PASSWORD_HASH
+5. How to configure SESSION_SECRET
+6. Where request logs are stored
+7. How long logs are retained
+8. How Pause/Resume/Drain works
+9. Whether /api/scrape was changed in any way
+10. How login brute-force protection works
+11. How sessions expire
+12. How request IDs are generated
+13. How queue utilization is calculated
+14. How I can test the entire admin console safely
+
+Do not modify unrelated functionality.
