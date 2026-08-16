@@ -8,10 +8,21 @@ import { AnthemScraper } from "./anthem.js";
 import { AetnaScraper } from "./aetna.js";
 import { UHCScraper } from "./uhc.js";
 import { CignaScraper } from "./cigna.js";
+import { BCBSScraper } from "./bcbs.js";
+import { TMHPScraper } from "./tmhp.js";
+import { NHPRIScraper } from "./nhpri.js";
 import type { IScraper } from "./types.js";
 
 /** Supported named routes. */
-export type ScraperRoute = "generic" | "anthem" | "aetna" | "uhc" | "cigna";
+export type ScraperRoute =
+  | "generic"
+  | "anthem"
+  | "aetna"
+  | "uhc"
+  | "cigna"
+  | "bcbs"
+  | "tmhp"
+  | "nhpri";
 
 /** All valid route names. */
 export const VALID_ROUTES: ReadonlySet<string> = new Set<ScraperRoute>([
@@ -20,6 +31,9 @@ export const VALID_ROUTES: ReadonlySet<string> = new Set<ScraperRoute>([
   "aetna",
   "uhc",
   "cigna",
+  "bcbs",
+  "tmhp",
+  "nhpri",
 ]);
 
 /** Map of route names to their scraper instances (lazily initialised). */
@@ -29,6 +43,9 @@ const SCRAPERS: Record<ScraperRoute, IScraper> = {
   aetna: new AetnaScraper(),
   uhc: new UHCScraper(),
   cigna: new CignaScraper(),
+  bcbs: new BCBSScraper(),
+  tmhp: new TMHPScraper(),
+  nhpri: new NHPRIScraper(),
 };
 
 /**
@@ -62,6 +79,45 @@ const DOMAIN_ROUTES: ReadonlyArray<[domain: string, route: ScraperRoute]> = [
   ["cigna.com", "cigna"],
   ["evernorth.com", "cigna"],
   ["cignaforhcp.com", "cigna"],
+
+  // Blue Cross Blue Shield — national & regional plans
+  ["bcbs.com", "bcbs"],
+  ["bluecrossblueshield.com", "bcbs"],
+  ["bcbsil.com", "bcbs"],       // Illinois
+  ["bcbstx.com", "bcbs"],       // Texas
+  ["bcbsfl.com", "bcbs"],       // Florida
+  ["floridablue.com", "bcbs"],  // Florida Blue
+  ["bcbsma.com", "bcbs"],       // Massachusetts
+  ["bcbsnc.com", "bcbs"],       // North Carolina
+  ["bcbsaz.com", "bcbs"],       // Arizona
+  ["azblue.com", "bcbs"],       // AZ Blue
+  ["bcbsga.com", "bcbs"],       // Georgia
+  ["bcbsm.com", "bcbs"],        // Michigan
+  ["bcbsmn.com", "bcbs"],       // Minnesota
+  ["bcbsal.com", "bcbs"],       // Alabama
+  ["bcbsmt.com", "bcbs"],       // Montana
+  ["bcbswy.com", "bcbs"],       // Wyoming
+  ["bcbsnd.com", "bcbs"],       // North Dakota
+  ["bcbsks.com", "bcbs"],       // Kansas
+  ["bcbsne.com", "bcbs"],       // Nebraska
+  ["bcbsok.com", "bcbs"],       // Oklahoma
+  ["bcbsri.com", "bcbs"],       // Rhode Island
+  ["bcbssc.com", "bcbs"],       // South Carolina
+  ["bcbsvt.com", "bcbs"],       // Vermont
+  ["highmark.com", "bcbs"],     // Highmark (PA/WV/DE/NY)
+  ["highmarkbcbs.com", "bcbs"],
+  ["carefirst.com", "bcbs"],    // CareFirst (MD/DC/VA)
+  ["premera.com", "bcbs"],      // Premera (WA/AK)
+  ["regence.com", "bcbs"],      // Regence (OR/WA/ID/UT)
+  ["blueshieldca.com", "bcbs"], // Blue Shield of California
+  ["ibx.com", "bcbs"],          // Independence Blue Cross (PA)
+  ["excellusbcbs.com", "bcbs"], // Excellus (NY)
+
+  // Texas Medicaid & Healthcare Partnership
+  ["tmhp.com", "tmhp"],
+
+  // Neighborhood Health Plan of Rhode Island
+  ["nhpri.org", "nhpri"],
 ];
 
 /**

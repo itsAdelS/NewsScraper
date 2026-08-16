@@ -59,17 +59,20 @@ components:
 
     RouteValue:
       type: string
-      enum: [generic, anthem, aetna, uhc, cigna]
+      enum: [generic, anthem, aetna, uhc, cigna, bcbs, tmhp, nhpri]
       description: |
         Selects a payer-specific extraction strategy.
 
-        | Value     | Payer                    | Auto-detected from hostname                                                                  |
-        |-----------|--------------------------|----------------------------------------------------------------------------------------------|
-        | `generic` | Any / unknown            | Default when no domain matches                                                               |
-        | `anthem`  | Anthem / Elevance Health | `anthem.com`, `elevancehealth.com`, `anthembluecross.com` (and all subdomains)               |
-        | `aetna`   | Aetna / CVS Health       | `aetna.com`, `cvs.com` (and all subdomains)                                                  |
-        | `uhc`     | UnitedHealth Group       | `uhc.com`, `uhcprovider.com`, `unitedhealthcareonline.com`, `optum.com` (and all subdomains) |
-        | `cigna`   | Cigna / Evernorth        | `cigna.com`, `evernorth.com`, `cignaforhcp.com` (and all subdomains)                        |
+        | Value     | Payer                              | Auto-detected from hostname                                                                                          |
+        |-----------|------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+        | `generic` | Any / unknown                      | Default when no domain matches                                                                                       |
+        | `anthem`  | Anthem / Elevance Health           | `anthem.com`, `elevancehealth.com`, `anthembluecross.com` (and all subdomains)                                       |
+        | `aetna`   | Aetna / CVS Health                 | `aetna.com`, `cvs.com` (and all subdomains)                                                                          |
+        | `uhc`     | UnitedHealth Group                 | `uhc.com`, `uhcprovider.com`, `unitedhealthcareonline.com`, `optum.com` (and all subdomains)                         |
+        | `cigna`   | Cigna / Evernorth                  | `cigna.com`, `evernorth.com`, `cignaforhcp.com` (and all subdomains)                                                 |
+        | `bcbs`    | Blue Cross Blue Shield (all plans) | `bcbs.com`, `bluecrossblueshield.com`, regional plan domains (`bcbsil.com`, `bcbstx.com`, `highmark.com`, etc.)      |
+        | `tmhp`    | Texas Medicaid & Healthcare Partnership | `tmhp.com`                                                                                                      |
+        | `nhpri`   | Neighborhood Health Plan of Rhode Island | `nhpri.org`                                                                                                  |
 
     ScrapeRequest:
       type: object

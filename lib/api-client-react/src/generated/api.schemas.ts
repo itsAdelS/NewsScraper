@@ -39,6 +39,9 @@ export const ScrapeRequestRoute = {
   aetna: 'aetna',
   uhc: 'uhc',
   cigna: 'cigna',
+  bcbs: 'bcbs',
+  tmhp: 'tmhp',
+  nhpri: 'nhpri',
 } as const;
 
 export interface ScrapeRequest {

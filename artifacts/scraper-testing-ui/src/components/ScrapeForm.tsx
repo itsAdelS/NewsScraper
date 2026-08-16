@@ -46,10 +46,13 @@ export function ScrapeForm({ onSubmit, isPending }: { onSubmit: (url: string, ro
           data-testid="select-route"
         >
           <option value="generic">Generic (Auto)</option>
-          <option value="anthem">Anthem</option>
-          <option value="aetna">Aetna</option>
-          <option value="uhc">UHC</option>
-          <option value="cigna">Cigna</option>
+          <option value="anthem">Anthem / Elevance</option>
+          <option value="aetna">Aetna / CVS</option>
+          <option value="uhc">UHC / Optum</option>
+          <option value="cigna">Cigna / Evernorth</option>
+          <option value="bcbs">BCBS / Blue Cross</option>
+          <option value="tmhp">TMHP (Texas Medicaid)</option>
+          <option value="nhpri">NHPRI (RI Medicaid)</option>
         </select>
         <Button 
           type="submit" 
