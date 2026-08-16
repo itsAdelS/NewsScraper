@@ -40,15 +40,23 @@ Optional tuning (env vars, with defaults):
 | `ADMIN_LOGIN_MAX_ATTEMPTS` | `5` | Failed logins per IP before lockout |
 | `ADMIN_LOGIN_WINDOW_MINUTES` | `15` | Lockout window |
 | `LOG_RETENTION_DAYS` | `30` | Request-history retention |
-| `LOG_CONTENT_PREVIEW` | `true` | Store a 500-char extracted-text preview |
+| `LOG_CONTENT_PREVIEW` | `false` | Opt in to storing a 500-char extracted-text preview (scraped pages may contain PII) |
 | `PAUSE_RETRY_AFTER_SECONDS` | `300` | `retryAfterSeconds` hint while paused |
 
 ## 6–7. Request log storage & retention
 
 Scrape request **metadata** is stored in the project's PostgreSQL database
 (table `scrape_requests`, via the existing `@workspace/db` Drizzle layer) —
-never full page content, tokens, or headers. An optional 500-char content
-preview is kept for diagnostics (`LOG_CONTENT_PREVIEW=false` disables it).
+never full page content, tokens, or headers. Before persistence, URLs are
+sanitized (userinfo credentials stripped; query parameters such as
+`token`, `key`, `signature`, `access_token`, `X-Amz-*` redacted) and URLs
+embedded in error messages get the same treatment. An optional 500-char
+content preview is **off by default** (`LOG_CONTENT_PREVIEW=true` opts in).
+
+If the scraper runs without a database (`DATABASE_URL` unset), history is
+disabled gracefully — the scraper API keeps working. Note: publishing to
+production requires creating the table in the production database first
+(schema push — tracked as a follow-up task).
 
 Rows older than `LOG_RETENTION_DAYS` (default 30) are pruned at boot and then
 hourly.

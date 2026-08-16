@@ -60,15 +60,67 @@ export function domainOf(url: string): string {
   }
 }
 
+// ── Sensitive-data redaction ─────────────────────────────────────────────────
+//
+// URLs can legitimately contain credentials (user:pass@host), API tokens in
+// query parameters, signed-URL signatures, or OAuth codes. History rows live
+// for `logRetentionDays`, so all persisted URLs and error messages are
+// sanitized first: userinfo is stripped and sensitive query params redacted.
+
+const SENSITIVE_PARAM = /(token|key|secret|password|passwd|pwd|auth|signature|sig|credential|bearer|jwt|session|code|x-amz-[a-z-]+)/i;
+
+/**
+ * Sanitize a single URL-ish string (non-recursive). Parseable URLs get
+ * userinfo stripped and sensitive query params redacted; HTTP-like strings
+ * that cannot be parsed FAIL CLOSED and are replaced wholesale (they may
+ * contain malformed credential material we cannot safely pick apart).
+ */
+function sanitizeSingleUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    u.username = "";
+    u.password = "";
+    // Fragments are never sent to the server and commonly carry OAuth
+    // implicit-flow credentials (#access_token=...) — drop them entirely.
+    u.hash = "";
+    for (const name of [...u.searchParams.keys()]) {
+      if (SENSITIVE_PARAM.test(name)) u.searchParams.set(name, "REDACTED");
+    }
+    return u.toString();
+  } catch {
+    return "REDACTED-UNPARSEABLE-URL";
+  }
+}
+
+/** Strip userinfo and redact sensitive query parameter values. */
+export function sanitizeUrlForLog(rawUrl: string): string {
+  if (!rawUrl) return rawUrl;
+  if (/^https?:\/\//i.test(rawUrl.trim())) return sanitizeSingleUrl(rawUrl.trim());
+  // Not HTTP-like (e.g. "not a url"): keep, but redact any embedded URLs.
+  return sanitizeText(rawUrl);
+}
+
+/** Redact URLs embedded in free text (e.g. error messages). Non-recursive. */
+export function sanitizeText(text: string): string {
+  return text.replace(/https?:\/\/\S+/gi, (m) => sanitizeSingleUrl(m));
+}
+
 /**
  * Record a completed scrape request. Fire-and-forget: logging must never
- * break the scrape response path.
+ * break the scrape response path. URLs and error text are sanitized here —
+ * the single choke point before persistence.
  */
 export function recordScrapeRequest(row: InsertScrapeRequest): void {
+  const safeRow: InsertScrapeRequest = {
+    ...row,
+    url: sanitizeUrlForLog(row.url),
+    finalUrl: row.finalUrl ? sanitizeUrlForLog(row.finalUrl) : row.finalUrl,
+    errorMessage: row.errorMessage ? sanitizeText(row.errorMessage) : row.errorMessage,
+  };
   void (async () => {
     const m = await getDbModule();
     if (!m) return;
-    await m.db.insert(m.scrapeRequestsTable).values(row);
+    await m.db.insert(m.scrapeRequestsTable).values(safeRow);
   })().catch((err: unknown) => {
     logger.warn({ err, requestId: row.requestId }, "Failed to persist scrape request log");
   });

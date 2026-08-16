@@ -75,9 +75,13 @@ export const config = {
   /** Days to retain scrape request history rows. */
   logRetentionDays: parseInt(process.env.LOG_RETENTION_DAYS ?? "30", 10),
 
-  /** Store a 500-char diagnostic preview of extracted content per request. */
+  /**
+   * Store a 500-char diagnostic preview of extracted content per request.
+   * Off by default: scraped pages may contain PII and previews are retained
+   * for logRetentionDays. Opt in with LOG_CONTENT_PREVIEW=true.
+   */
   logContentPreview:
-    (process.env.LOG_CONTENT_PREVIEW ?? "true").toLowerCase() !== "false",
+    (process.env.LOG_CONTENT_PREVIEW ?? "false").toLowerCase() === "true",
 
   /** retryAfterSeconds hint returned while scraping is paused. */
   pauseRetryAfterSeconds: parseInt(

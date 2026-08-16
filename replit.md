@@ -58,7 +58,7 @@ Internal ops console at `/admin` (production) and `/api/admin-console` (reachabl
 - Auth: `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (bcrypt — generate via `node artifacts/api-server/scripts/hash-password.mjs '<pw>'`), sessions signed with `SESSION_SECRET`. Completely separate from the API bearer token.
 - Pages: dashboard, requests (search/filter/pagination), request detail, errors, controls (pause/resume/drain).
 - JSON API under `/api/admin/*`; `status` and `alerts` also accept the API bearer key (for Power Automate polling).
-- Request history stored in Postgres table `scrape_requests` (30-day retention, hourly pruning). Request IDs: `PN-YYYYMMDD-XXXXXX`.
+- Request history stored in Postgres table `scrape_requests` (30-day retention, hourly pruning). URLs/errors are credential-redacted before persistence; content preview off by default (`LOG_CONTENT_PREVIEW=true` opts in). Request IDs: `PN-YYYYMMDD-XXXXXX`.
 - Pause/drain gate `POST /api/scrape` with 503 `{success:false,status:"paused"|"draining",...}`; state is in-memory and resets to normal on restart.
 - Code: `artifacts/api-server/src/admin/` (sessions, middleware, UI router), `src/routes/admin.ts` (JSON API), `src/lib/{ops-state,alerts,request-log}.ts`.
 

@@ -105,6 +105,17 @@ describe("admin auth boundary", () => {
     expect(res.body.mode).toBeDefined();
   });
 
+  it("still returns the documented 400 for malformed scrape URLs (logging must not break it)", async () => {
+    for (const url of ["http://", "https://user:password@", "not a url"]) {
+      const res = await request(app)
+        .post("/api/scrape")
+        .set("Authorization", `Bearer ${API_KEY}`)
+        .send({ url });
+      expect([400, 403]).toContain(res.status);
+      expect(res.body.success).toBe(false);
+    }
+  });
+
   it("rejects a wrong password with a generic 401", async () => {
     const res = await request(app)
       .post("/admin/login")
