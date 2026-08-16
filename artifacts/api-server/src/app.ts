@@ -5,11 +5,17 @@ import express, {
   type NextFunction,
 } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
+import adminUiRouter from "./admin/router.js";
 import { logger } from "./lib/logger.js";
 
 const app: Express = express();
+
+// Behind the Replit proxy — needed for correct req.ip (login rate limiting)
+// and req.secure (Secure cookie flag).
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
@@ -33,8 +39,14 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Signed cookies for the admin session (separate from API bearer auth).
+app.use(cookieParser(process.env.SESSION_SECRET));
 
 app.use("/api", router);
+// Admin console UI: /admin in production (root), and /api/admin-console so it
+// is also reachable through the dev preview (whose base path is /api).
+app.use("/admin", adminUiRouter);
+app.use("/api/admin-console", adminUiRouter);
 
 /**
  * JSON body-parser error handler.

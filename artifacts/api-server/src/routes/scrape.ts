@@ -13,25 +13,82 @@ import { BrowserPoolFullError } from "../scrapers/browser-pool.js";
 import { config } from "../config.js";
 import type { ScrapeRequestBody, ScrapeResponseBody } from "../scrapers/types.js";
 import { logger } from "../lib/logger.js";
-import { randomUUID } from "node:crypto";
+import { getOpsState } from "../lib/ops-state.js";
+import { browserPool } from "../scrapers/browser-pool.js";
+import {
+  generateRequestId,
+  domainOf,
+  recordScrapeRequest,
+  PREVIEW_MAX_CHARS,
+} from "../lib/request-log.js";
 
 const router: IRouter = Router();
 
 router.post("/scrape", requireApiKey, async (req, res) => {
-  const requestId = (req as { id?: string }).id?.toString() ?? randomUUID().slice(0, 8);
+  // Reject new work while paused/draining — BEFORE any scraping starts.
+  // Active and queued jobs are unaffected; this only gates new requests.
+  const ops = getOpsState();
+  if (!ops.acceptingRequests) {
+    res.setHeader("Retry-After", String(config.pauseRetryAfterSeconds));
+    res.status(503).json({
+      success: false,
+      status: ops.mode === "drain" ? "draining" : "paused",
+      error: "Scraping is temporarily paused by administrator.",
+      retryAfterSeconds: config.pauseRetryAfterSeconds,
+    });
+    return;
+  }
+
+  const requestId = generateRequestId();
   const startMs = Date.now();
+  const poolAtStart = browserPool.stats;
 
   const body = req.body as Partial<ScrapeRequestBody>;
   const rawUrl = body.url;
   const rawRoute = body.route;
 
+  /** Persist request metadata for the admin console (fire-and-forget). */
+  const logRequest = (opts: {
+    route: string;
+    success: boolean;
+    finalUrl?: string;
+    scraperUsed?: string;
+    httpStatus?: number;
+    contentLength?: number;
+    error?: string;
+    preview?: string;
+  }): void => {
+    recordScrapeRequest({
+      requestId,
+      url: typeof rawUrl === "string" ? rawUrl : "",
+      finalUrl: opts.finalUrl ?? "",
+      domain: typeof rawUrl === "string" ? domainOf(rawUrl) : "",
+      route: opts.route,
+      scraperUsed: opts.scraperUsed ?? "",
+      httpStatus: opts.httpStatus ?? 0,
+      success: opts.success,
+      contentLength: opts.contentLength ?? 0,
+      durationMs: Date.now() - startMs,
+      playwrightFallback: opts.scraperUsed === "playwright",
+      errorMessage: opts.error ?? null,
+      queueDepthAtStart: poolAtStart.queued,
+      activeContextsAtStart: poolAtStart.active,
+      contentPreview:
+        config.logContentPreview && opts.preview
+          ? opts.preview.slice(0, PREVIEW_MAX_CHARS)
+          : null,
+    });
+  };
+
   // --- Request validation ---
   if (!rawUrl) {
+    logRequest({ route: rawRoute ?? "generic", success: false, error: "Missing required field: url" });
     res.status(400).json(errorResponse("", rawRoute ?? "generic", "", 0, "Missing required field: url"));
     return;
   }
 
   if (typeof rawUrl !== "string") {
+    logRequest({ route: rawRoute ?? "generic", success: false, error: "Field 'url' must be a string" });
     res.status(400).json(errorResponse("", rawRoute ?? "generic", "", 0, "Field 'url' must be a string"));
     return;
   }
@@ -42,6 +99,7 @@ router.post("/scrape", requireApiKey, async (req, res) => {
   } catch (err) {
     if (err instanceof UrlValidationError) {
       const httpStatus = err.httpStatus === 403 ? 403 : 400;
+      logRequest({ route: rawRoute ?? "generic", success: false, httpStatus, error: err.message });
       res.status(httpStatus).json(
         errorResponse(rawUrl, rawRoute ?? "generic", "", 0, err.message),
       );
@@ -64,6 +122,7 @@ router.post("/scrape", requireApiKey, async (req, res) => {
     // Browser pool is at capacity — return 503 so Power Automate can retry.
     if (err instanceof BrowserPoolFullError) {
       logger.warn({ requestId, url: rawUrl, route, durationMs }, "Browser pool full — returning 503");
+      logRequest({ route, success: false, httpStatus: 503, error: err.message });
       res.status(503).json(
         errorResponse(rawUrl, route, "", durationMs, err.message),
       );
@@ -72,6 +131,7 @@ router.post("/scrape", requireApiKey, async (req, res) => {
 
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ requestId, url: rawUrl, route, error: msg, durationMs }, "Scraper threw unexpected error");
+    logRequest({ route, success: false, httpStatus: 500, error: `Unexpected scraper error: ${msg}` });
 
     res.status(500).json(
       errorResponse(rawUrl, route, "", durationMs, `Unexpected scraper error: ${msg}`),
@@ -128,6 +188,17 @@ router.post("/scrape", requireApiKey, async (req, res) => {
     },
     "Scrape request complete",
   );
+
+  logRequest({
+    route,
+    success: result.success,
+    finalUrl: result.finalUrl,
+    scraperUsed: result.scraperUsed,
+    httpStatus: response.statusCode,
+    contentLength: content.length,
+    error: result.error,
+    preview: result.success ? content : undefined,
+  });
 
   res.status(httpStatus).json(response);
 });

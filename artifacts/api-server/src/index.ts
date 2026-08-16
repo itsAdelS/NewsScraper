@@ -1,6 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { browserPool } from "./scrapers/browser-pool";
+import { startAlertMonitor } from "./lib/alerts";
+import { startRetentionPruning } from "./lib/request-log";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +26,11 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+// Admin console background services: pool alert-state machine and
+// request-log retention pruning.
+startAlertMonitor();
+startRetentionPruning();
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Close the shared Chromium browser before the process exits so no orphan
