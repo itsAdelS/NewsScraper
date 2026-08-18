@@ -252,6 +252,15 @@ router.get("/", requireAdminPage, (_req, res) => {
   const body = `
 <div id="alert-banner" class="banner"></div>
 <h1>Dashboard <span id="svc-badge" class="badge gray">…</span> <span id="mode-badge"></span></h1>
+<div class="card" style="margin-bottom:24px;padding-bottom:12px;position:relative">
+  <h2 style="margin-bottom:8px">Scrape Activity <span class="muted" style="font-weight:400;font-size:12px">— last 10 min · 30-sec buckets</span></h2>
+  <canvas id="activity-graph" height="120" style="width:100%;display:block;border-radius:4px"></canvas>
+  <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:var(--muted)">
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#58a6ff;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
+  </div>
+  <div id="activity-tooltip" style="display:none;position:fixed;z-index:100;background:#1a2129;border:1px solid #2b3540;border-radius:8px;padding:10px 14px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.5)"></div>
+</div>
 <div class="cards">
   <div class="card"><h2>Service Health</h2>
     <div class="kv"><span>Status</span><span id="h-status">—</span></div>
@@ -279,15 +288,6 @@ router.get("/", requireAdminPage, (_req, res) => {
     <div class="kv"><span>Avg / median duration</span><span id="s-dur">—</span></div>
     <div class="kv"><span>Longest duration</span><span id="s-max">—</span></div>
   </div>
-</div>
-<div class="card" style="margin-bottom:24px;padding-bottom:12px;position:relative">
-  <h2 style="margin-bottom:8px">Scrape Activity <span class="muted" style="font-weight:400;font-size:12px">— last 10 min · 30-sec buckets</span></h2>
-  <canvas id="activity-graph" height="120" style="width:100%;display:block;border-radius:4px"></canvas>
-  <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:var(--muted)">
-    <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
-    <span><span style="display:inline-block;width:10px;height:10px;background:#2b3540;border:1px solid #4a5568;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
-  </div>
-  <div id="activity-tooltip" style="display:none;position:fixed;z-index:100;background:#1a2129;border:1px solid #2b3540;border-radius:8px;padding:10px 14px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.5)"></div>
 </div>
 <h2>Recent scrapes</h2>
 <table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
@@ -404,7 +404,7 @@ function drawActivity(buckets){
     const totalH = plotH * (total / maxVal);
     const staticH = plotH * (b.static / maxVal);
     const pwH = totalH - staticH;
-    if (pwH > 0.5){ ctx.fillStyle='#2b3540'; ctx.fillRect(x, PT+plotH-pwH, bw, pwH); }
+    if (pwH > 0.5){ ctx.fillStyle='#58a6ff'; ctx.fillRect(x, PT+plotH-pwH, bw, pwH); }
     if (staticH > 0.5){ ctx.fillStyle='#3fb950'; ctx.fillRect(x, PT+plotH-totalH, bw, staticH); }
   });
   ctx.fillStyle = '#8b98a5';
@@ -438,7 +438,7 @@ function initActivityTooltip(){
     tip.innerHTML =
       '<div style="color:#8b98a5;margin-bottom:6px;font-size:11px">' + timeLabel + '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#3fb950;border-radius:2px"></span>Static<span style="margin-left:auto;font-weight:600">' + b.static + '</span></div>' +
-      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#2b3540;border:1px solid #4a5568;border-radius:2px"></span>Playwright<span style="margin-left:auto;font-weight:600">' + b.playwright + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#58a6ff;border-radius:2px"></span>Playwright<span style="margin-left:auto;font-weight:600">' + b.playwright + '</span></div>' +
       '<div style="border-top:1px solid #2b3540;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between"><span style="color:#8b98a5">Total</span><span style="font-weight:600">' + total + '</span></div>';
     const tipW = 190, tipH = 105;
     let tx = e.clientX + 12;
