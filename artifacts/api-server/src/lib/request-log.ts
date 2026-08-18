@@ -305,6 +305,74 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
   };
 }
 
+// ── Activity buckets ─────────────────────────────────────────────────────────
+
+export interface ActivityBucket {
+  ts: number; // Unix epoch seconds (start of bucket)
+  static: number;
+  playwright: number;
+}
+
+/**
+ * Return time-bucketed scrape counts for the last `minutes` minutes.
+ *
+ * Empty buckets are filled with zeros so callers always receive exactly
+ * `Math.ceil(minutes * 60 / bucketSecs)` entries. Falls back to an all-zero
+ * series when the database is unavailable.
+ */
+export async function getActivityBuckets(
+  minutes = 10,
+  bucketSecs = 30,
+): Promise<ActivityBucket[]> {
+  const totalBuckets = Math.ceil((minutes * 60) / bucketSecs);
+
+  // Anchor the window on the current aligned bucket so "now" is always the
+  // rightmost bar. Work backwards so the current partial bucket is included.
+  const nowBucket = Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs;
+
+  const map = new Map<number, ActivityBucket>();
+  for (let i = 0; i < totalBuckets; i++) {
+    const ts = nowBucket - (totalBuckets - 1 - i) * bucketSecs;
+    map.set(ts, { ts, static: 0, playwright: 0 });
+  }
+
+  const m = await getDbModule();
+  if (!m) return [...map.values()].sort((a, b) => a.ts - b.ts);
+
+  const { db, scrapeRequestsTable: t } = m;
+  // Cover from the oldest bucket start through the end of the current bucket.
+  const since = new Date((nowBucket - (totalBuckets - 1) * bucketSecs) * 1000);
+
+  const bSecs = sql.raw(String(bucketSecs));
+  try {
+    const rows = await db
+      .select({
+        bucketTs: sql<number>`floor(extract(epoch from ${t.createdAt}) / ${bSecs}) * ${bSecs}`,
+        staticCount: count(sql`CASE WHEN ${t.scraperUsed} = 'static' THEN 1 END`),
+        playwrightCount: count(sql`CASE WHEN ${t.scraperUsed} = 'playwright' THEN 1 END`),
+      })
+      .from(t)
+      .where(gte(t.createdAt, since))
+      .groupBy(sql`floor(extract(epoch from ${t.createdAt}) / ${bSecs}) * ${bSecs}`)
+      .orderBy(sql`floor(extract(epoch from ${t.createdAt}) / ${bSecs}) * ${bSecs}`);
+
+    for (const row of rows) {
+      const ts = Number(row.bucketTs);
+      if (map.has(ts)) {
+        map.set(ts, {
+          ts,
+          static: Number(row.staticCount),
+          playwright: Number(row.playwrightCount),
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "Activity bucket query failed — returning zero series");
+  }
+
+  return [...map.values()].sort((a, b) => a.ts - b.ts);
+}
+
 // ── Retention ─────────────────────────────────────────────────────────────────
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly

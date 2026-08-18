@@ -52,6 +52,41 @@ describe("sanitizeUrlForLog", () => {
   });
 });
 
+describe("getActivityBuckets (no DATABASE_URL → zero series from fallback)", () => {
+  it("always includes the current aligned bucket as the last entry", async () => {
+    const { getActivityBuckets } = await import("../lib/request-log.js");
+    const bucketSecs = 30;
+    const before = Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs;
+    const buckets = await getActivityBuckets(10, bucketSecs);
+    const after = Math.floor(Date.now() / 1000 / bucketSecs) * bucketSecs;
+    // Last bucket must be the current aligned slot (may advance if we straddle a boundary)
+    expect(buckets[buckets.length - 1].ts).toBeGreaterThanOrEqual(before);
+    expect(buckets[buckets.length - 1].ts).toBeLessThanOrEqual(after);
+  });
+
+  it("returns exactly minutes*60/bucketSecs entries", async () => {
+    const { getActivityBuckets } = await import("../lib/request-log.js");
+    const buckets = await getActivityBuckets(10, 30);
+    expect(buckets.length).toBe(20);
+    const buckets2 = await getActivityBuckets(5, 60);
+    expect(buckets2.length).toBe(5);
+  });
+
+  it("buckets are sorted ascending with non-negative integer counts", async () => {
+    const { getActivityBuckets } = await import("../lib/request-log.js");
+    const buckets = await getActivityBuckets(10, 30);
+    for (let i = 1; i < buckets.length; i++) {
+      expect(buckets[i].ts).toBeGreaterThan(buckets[i - 1].ts);
+    }
+    for (const b of buckets) {
+      expect(Number.isInteger(b.static)).toBe(true);
+      expect(Number.isInteger(b.playwright)).toBe(true);
+      expect(b.static).toBeGreaterThanOrEqual(0);
+      expect(b.playwright).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
 describe("sanitizeText", () => {
   it("redacts URLs embedded in error messages", () => {
     const out = sanitizeText(

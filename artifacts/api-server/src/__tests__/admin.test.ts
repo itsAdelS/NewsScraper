@@ -49,6 +49,7 @@ vi.mock("../lib/request-log.js", async (importOriginal) => {
       .mockResolvedValue({ rows: [], total: 0, page: 1, pageCount: 1, limit: 25 }),
     getScrapeStats: vi.fn().mockResolvedValue({}),
     getRequestByRequestId: vi.fn().mockResolvedValue(undefined),
+    getActivityBuckets: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -195,6 +196,45 @@ describe("session + CSRF + controls + pause gate", () => {
       ).status,
     ).toBe(200);
     expect((await request(app).get("/admin/").set("Cookie", cookie)).status).toBe(401);
+  });
+});
+
+describe("activity endpoint", () => {
+  it("requires auth", async () => {
+    const res = await request(app).get("/api/admin/activity");
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts API bearer key (same as /status)", async () => {
+    const res = await request(app)
+      .get("/api/admin/activity")
+      .set("Authorization", `Bearer ${API_KEY}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.buckets)).toBe(true);
+    expect(typeof res.body.bucketSecs).toBe("number");
+    expect(typeof res.body.generatedAt).toBe("string");
+  });
+
+  it("returns correct bucket shape with session auth", async () => {
+    const { cookie } = await login();
+    const res = await request(app)
+      .get("/api/admin/activity?minutes=5&bucketSecs=60")
+      .set("Cookie", cookie);
+    expect(res.status).toBe(200);
+    // getActivityBuckets is mocked to return [] — shape/auth is what matters here
+    expect(Array.isArray(res.body.buckets)).toBe(true);
+    expect(res.body.bucketSecs).toBe(60);
+  });
+
+  it("degrades gracefully and returns 200 with empty buckets when getActivityBuckets throws", async () => {
+    const { getActivityBuckets } = await import("../lib/request-log.js");
+    vi.mocked(getActivityBuckets).mockRejectedValueOnce(new Error("DB connection lost"));
+    const res = await request(app)
+      .get("/api/admin/activity")
+      .set("Authorization", `Bearer ${API_KEY}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.buckets)).toBe(true);
+    expect(res.body.buckets).toHaveLength(0);
   });
 });
 

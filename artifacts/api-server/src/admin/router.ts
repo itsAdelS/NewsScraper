@@ -280,6 +280,14 @@ router.get("/", requireAdminPage, (_req, res) => {
     <div class="kv"><span>Longest duration</span><span id="s-max">—</span></div>
   </div>
 </div>
+<div class="card" style="margin-bottom:24px;padding-bottom:12px">
+  <h2 style="margin-bottom:8px">Scrape Activity <span class="muted" style="font-weight:400;font-size:12px">— last 10 min · 30-sec buckets</span></h2>
+  <canvas id="activity-graph" height="120" style="width:100%;display:block;border-radius:4px"></canvas>
+  <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:var(--muted)">
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#2b3540;border:1px solid #4a5568;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
+  </div>
+</div>
 <h2>Recent scrapes</h2>
 <table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
 <tbody id="recent-body"><tr class="norow"><td colspan="8" class="muted">Loading…</td></tr></tbody></table>
@@ -358,8 +366,53 @@ async function refreshRecent(){
     }
   }catch(e){}
 }
-refreshStatus(); refreshStats(); refreshRecent();
-setInterval(refreshStatus, 6000);
+function drawActivity(buckets){
+  const canvas = document.getElementById('activity-graph');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.offsetWidth || 800;
+  const cssH = 120;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = cssW, H = cssH;
+  const PT = 22, PB = 18, PL = 4, PR = 4;
+  const plotW = W - PL - PR, plotH = H - PT - PB;
+  ctx.fillStyle = '#0f1419';
+  ctx.fillRect(0, 0, W, H);
+  const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright));
+  ctx.strokeStyle = '#1f2a35';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++){
+    const y = PT + plotH * (1 - i/4);
+    ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
+  }
+  const n = buckets.length || 1;
+  const barW = plotW / n;
+  const gap = Math.max(1, barW * 0.18);
+  buckets.forEach((b, i) => {
+    const x = PL + i * barW + gap / 2;
+    const bw = Math.max(1, barW - gap);
+    const total = b.static + b.playwright;
+    if (!total) return;
+    const totalH = plotH * (total / maxVal);
+    const staticH = plotH * (b.static / maxVal);
+    const pwH = totalH - staticH;
+    if (pwH > 0.5){ ctx.fillStyle='#2b3540'; ctx.fillRect(x, PT+plotH-pwH, bw, pwH); }
+    if (staticH > 0.5){ ctx.fillStyle='#3fb950'; ctx.fillRect(x, PT+plotH-totalH, bw, staticH); }
+  });
+  ctx.fillStyle = '#8b98a5';
+  ctx.font = '10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+  ctx.textAlign = 'left';  ctx.fillText(maxVal, PL + 2, PT - 6);
+  ctx.fillText('10 min ago', PL + 2, H - 4);
+  ctx.textAlign = 'right'; ctx.fillText('now', W - PR - 2, H - 4);
+}
+async function fetchActivity(){
+  try { const d = await api('/activity'); drawActivity(d.buckets || []); } catch(e){}
+}
+refreshStatus(); refreshStats(); refreshRecent(); fetchActivity();
+setInterval(() => { refreshStatus(); fetchActivity(); }, 6000);
 setInterval(refreshStats, 30000);
 setInterval(refreshRecent, 15000);`;
 

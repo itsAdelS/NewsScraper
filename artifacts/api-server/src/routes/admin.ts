@@ -19,6 +19,7 @@ import {
   getScrapeStats,
   queryRequests,
   getRequestByRequestId,
+  getActivityBuckets,
 } from "../lib/request-log.js";
 import {
   requireAdminApi,
@@ -107,6 +108,19 @@ router.get("/admin/me", requireAdminApi, (req: AdminRequest, res) => {
 
 router.get("/admin/stats", requireAdminApi, async (_req, res) => {
   res.json(await getScrapeStats());
+});
+
+router.get("/admin/activity", requireSessionOrApiKey, async (req, res) => {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+  const minutes = clamp(parseInt(String(req.query.minutes ?? "10"), 10) || 10, 1, 60);
+  const bucketSecs = clamp(parseInt(String(req.query.bucketSecs ?? "30"), 10) || 30, 5, 300);
+  let buckets: Awaited<ReturnType<typeof getActivityBuckets>> = [];
+  try {
+    buckets = await getActivityBuckets(minutes, bucketSecs);
+  } catch {
+    // Degrade gracefully — the dashboard still renders without activity data.
+  }
+  res.json({ buckets, bucketSecs, generatedAt: new Date().toISOString() });
 });
 
 router.get("/admin/requests", requireAdminApi, async (req, res) => {
