@@ -280,13 +280,14 @@ router.get("/", requireAdminPage, (_req, res) => {
     <div class="kv"><span>Longest duration</span><span id="s-max">—</span></div>
   </div>
 </div>
-<div class="card" style="margin-bottom:24px;padding-bottom:12px">
+<div class="card" style="margin-bottom:24px;padding-bottom:12px;position:relative">
   <h2 style="margin-bottom:8px">Scrape Activity <span class="muted" style="font-weight:400;font-size:12px">— last 10 min · 30-sec buckets</span></h2>
   <canvas id="activity-graph" height="120" style="width:100%;display:block;border-radius:4px"></canvas>
   <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:var(--muted)">
     <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#2b3540;border:1px solid #4a5568;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
   </div>
+  <div id="activity-tooltip" style="display:none;position:fixed;z-index:100;background:#1a2129;border:1px solid #2b3540;border-radius:8px;padding:10px 14px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.5)"></div>
 </div>
 <h2>Recent scrapes</h2>
 <table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
@@ -366,9 +367,12 @@ async function refreshRecent(){
     }
   }catch(e){}
 }
+let _activityBuckets = [];
+let _activityLayout = { PL:4, PT:22, PB:18, PR:4, plotW:0, cssW:0, n:1 };
 function drawActivity(buckets){
   const canvas = document.getElementById('activity-graph');
   if (!canvas) return;
+  _activityBuckets = buckets;
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth || 800;
   const cssH = 120;
@@ -379,6 +383,7 @@ function drawActivity(buckets){
   const W = cssW, H = cssH;
   const PT = 22, PB = 18, PL = 4, PR = 4;
   const plotW = W - PL - PR, plotH = H - PT - PB;
+  _activityLayout = { PL, PT, PB, PR, plotW, cssW, n: buckets.length || 1 };
   ctx.fillStyle = '#0f1419';
   ctx.fillRect(0, 0, W, H);
   const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright));
@@ -408,10 +413,48 @@ function drawActivity(buckets){
   ctx.fillText('10 min ago', PL + 2, H - 4);
   ctx.textAlign = 'right'; ctx.fillText('now', W - PR - 2, H - 4);
 }
+function initActivityTooltip(){
+  const canvas = document.getElementById('activity-graph');
+  const tip = document.getElementById('activity-tooltip');
+  if (!canvas || !tip) return;
+  function fmtBucketTime(ts){
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2,'0');
+    const start = pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    const d2 = new Date(+d + 30000);
+    const end = pad(d2.getHours())+':'+pad(d2.getMinutes())+':'+pad(d2.getSeconds());
+    return start + ' – ' + end;
+  }
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const { PL, plotW, n } = _activityLayout;
+    const barW = plotW / n;
+    const idx = Math.floor((mx - PL) / barW);
+    if (idx < 0 || idx >= _activityBuckets.length) { tip.style.display='none'; return; }
+    const b = _activityBuckets[idx];
+    const total = b.static + b.playwright;
+    const timeLabel = b.ts ? fmtBucketTime(b.ts * 1000) : ('Bucket ' + (idx+1));
+    tip.innerHTML =
+      '<div style="color:#8b98a5;margin-bottom:6px;font-size:11px">' + timeLabel + '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#3fb950;border-radius:2px"></span>Static<span style="margin-left:auto;font-weight:600">' + b.static + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#2b3540;border:1px solid #4a5568;border-radius:2px"></span>Playwright<span style="margin-left:auto;font-weight:600">' + b.playwright + '</span></div>' +
+      '<div style="border-top:1px solid #2b3540;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between"><span style="color:#8b98a5">Total</span><span style="font-weight:600">' + total + '</span></div>';
+    const tipW = 190, tipH = 105;
+    let tx = e.clientX + 12;
+    let ty = e.clientY - tipH - 8;
+    if (tx + tipW > window.innerWidth - 8) tx = e.clientX - tipW - 12;
+    if (ty < 8) ty = e.clientY + 16;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+    tip.style.display = 'block';
+  });
+  canvas.addEventListener('mouseleave', () => { tip.style.display='none'; });
+}
 async function fetchActivity(){
   try { const d = await api('/activity'); drawActivity(d.buckets || []); } catch(e){}
 }
-refreshStatus(); refreshStats(); refreshRecent(); fetchActivity();
+refreshStatus(); refreshStats(); refreshRecent(); fetchActivity(); initActivityTooltip();
 setInterval(() => { refreshStatus(); fetchActivity(); }, 6000);
 setInterval(refreshStats, 30000);
 setInterval(refreshRecent, 15000);`;
