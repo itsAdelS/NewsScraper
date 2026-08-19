@@ -1,0 +1,634 @@
+Update the existing PayerNews Scraper so the current POST /api/scrape endpoint can process both normal webpages and PDF documents.
+
+Critical Requirement
+
+The existing HTML/webpage scraping functionality is already working correctly.
+
+Do not rewrite, replace, or restructure the working HTML scraping logic unless absolutely necessary.
+
+Do not change the existing request contract used by Power Automate.
+
+Power Automate currently sends:
+
+{
+  "url": "https://example.com/resource",
+  "route": "generic"
+}
+
+The same endpoint must continue to work:
+
+POST /api/scrape
+
+The goal is simply to extend this endpoint so the URL may also point to a PDF.
+
+⸻
+
+Desired Behavior
+
+The scraper should accept any supported payer URL and determine whether the resource is:
+
+* HTML/webpage
+* PDF document
+
+Conceptually:
+
+POST /api/scrape
+        ↓
+Fetch/inspect URL
+        ↓
+What type of resource is it?
+        │
+        ├── HTML
+        │      ↓
+        │ Existing scraper logic
+        │      ↓
+        │ static → Playwright fallback
+        │
+        └── PDF
+               ↓
+          PDF extraction
+               ↓
+       Native text available?
+           /           \
+         YES            NO
+          ↓              ↓
+     Native text       OCR
+          \              /
+           ↓            ↓
+              content
+
+Regardless of the extraction method, Power Automate must continue receiving the useful extracted text in:
+
+content
+
+⸻
+
+PDF Detection
+
+Do not rely only on the URL ending in .pdf.
+
+Some payer websites may serve PDF files through URLs such as:
+
+https://payer.com/document?id=12345
+
+Detect PDFs using multiple indicators.
+
+Primary detection:
+
+Content-Type: application/pdf
+
+Also consider:
+
+* .pdf URL extension
+* PDF file signature / magic bytes such as %PDF-
+
+If the URL says .pdf but the server actually returns HTML, handle the actual response rather than blindly treating it as PDF.
+
+If the server redirects, inspect the final response.
+
+⸻
+
+PDF Download
+
+For PDFs:
+
+1. Download the PDF securely.
+2. Respect the same URL/SSRF validation already used by the scraper.
+3. Validate redirects.
+4. Set a reasonable timeout.
+5. Limit maximum PDF size.
+6. Reject malformed or unsupported files cleanly.
+7. Never return HTML error pages to Power Automate.
+
+Suggested configurable limit:
+
+MAX_PDF_SIZE_MB=25
+
+Do not hard-code this if the app already has a configuration system.
+
+⸻
+
+Native PDF Text Extraction
+
+Use PyMuPDF / fitz as the initial PDF extraction method.
+
+Do not OCR every PDF.
+
+For each page:
+
+1. Attempt native text extraction.
+2. Evaluate whether meaningful text was extracted.
+3. If the page contains sufficient native text, preserve it.
+4. If the page contains little or no meaningful text, mark that page for OCR.
+
+Preserve page order.
+
+Example:
+
+Page 1 → native text
+Page 2 → native text
+Page 3 → scanned image → OCR
+Page 4 → native text
+
+The final output must be:
+
+Page 1 text
+Page 2 text
+Page 3 OCR text
+Page 4 text
+
+Do not OCR pages that already contain usable text.
+
+⸻
+
+OCR Fallback
+
+For pages with missing or clearly insufficient native text, use OCR.
+
+Use an appropriate local OCR implementation compatible with the Replit deployment.
+
+Preferred approach:
+
+* PyMuPDF page rendering
+* Tesseract OCR
+
+If the existing Replit environment makes another reliable OCR implementation more appropriate, use it, but do not introduce an external paid OCR API.
+
+The OCR system should be local to this scraper service.
+
+OCR should be considered a fallback, not the default PDF extraction method.
+
+⸻
+
+Native Text Quality Detection
+
+Create a reasonable heuristic to determine whether native text extraction succeeded.
+
+Do not simply test:
+
+if text:
+
+because some PDFs may return a few meaningless characters.
+
+Consider things such as:
+
+* character count
+* alphanumeric character count
+* words per page
+* ratio of readable characters
+* total page text
+
+Example conceptual behavior:
+
+Native page text > useful threshold
+→ use native text
+Native page text blank or obviously insufficient
+→ OCR page
+
+Keep the threshold configurable/easy to modify.
+
+⸻
+
+Mixed PDFs
+
+Support documents containing both native-text and scanned pages.
+
+Return extraction type:
+
+pdf-native
+
+when every useful page was extracted natively.
+
+Return:
+
+pdf-ocr
+
+when the document required OCR for all meaningful pages.
+
+Return:
+
+pdf-mixed
+
+when both native and OCR extraction were used.
+
+⸻
+
+Text Formatting
+
+The existing downstream Copilot agent will classify the extracted content.
+
+Therefore PDF extraction should produce clean, readable text.
+
+Preserve useful:
+
+* page order
+* headings
+* paragraphs
+* list items
+* codes
+* dates
+* policy names
+* tables where practical
+
+Do not aggressively shorten or summarize the document.
+
+Do not perform AI classification.
+
+Do not modify or interpret the payer content.
+
+⸻
+
+Tables
+
+Payer PDFs frequently contain important information inside tables.
+
+Examples include:
+
+* CPT codes
+* HCPCS codes
+* effective dates
+* reimbursement rates
+* policy descriptions
+* state information
+* authorization requirements
+
+Preserve table content as readable text where reasonably possible.
+
+For example:
+
+Code | Description | Effective Date
+Q4369 | Skin Substitute | 01/01/2027
+0970T | Procedure Description | 01/01/2027
+
+Do not discard table text simply because formatting cannot be perfectly recreated.
+
+⸻
+
+Existing Response Compatibility
+
+The current /api/scrape response structure used by Power Automate must continue working.
+
+At minimum, existing fields such as:
+
+{
+  "success": true,
+  "url": "...",
+  "finalUrl": "...",
+  "route": "generic",
+  "scraperUsed": "static",
+  "title": "...",
+  "content": "...",
+  "contentLength": 12345,
+  "statusCode": 200,
+  "durationMs": 1500
+}
+
+must remain compatible.
+
+Do not rename or remove existing fields.
+
+⸻
+
+Add PDF Metadata
+
+Add optional fields to the existing response:
+
+{
+  "documentType": "pdf",
+  "scraperUsed": "pdf-native",
+  "ocrUsed": false,
+  "pageCount": 12,
+  "nativePages": 12,
+  "ocrPages": 0
+}
+
+For mixed extraction:
+
+{
+  "documentType": "pdf",
+  "scraperUsed": "pdf-mixed",
+  "ocrUsed": true,
+  "pageCount": 15,
+  "nativePages": 12,
+  "ocrPages": 3
+}
+
+For normal webpages:
+
+{
+  "documentType": "html"
+}
+
+Do not require Power Automate to use these new fields.
+
+The critical existing field remains:
+
+content
+
+⸻
+
+PDF Title
+
+Attempt to determine the PDF title using this priority:
+
+1. PDF metadata title, if useful
+2. First meaningful heading or first strong line of extracted text
+3. Filename
+4. Empty string
+
+Do not invent titles.
+
+⸻
+
+Encrypted PDFs
+
+If the PDF is encrypted or password-protected and cannot be opened without credentials:
+
+Return a controlled JSON failure.
+
+Example:
+
+{
+  "success": false,
+  "documentType": "pdf",
+  "error": "PDF is encrypted or password protected",
+  "content": "",
+  "contentLength": 0
+}
+
+Do not crash the request.
+
+⸻
+
+OCR Failure Handling
+
+If native extraction fails and OCR also fails, return predictable JSON.
+
+Example:
+
+{
+  "success": false,
+  "documentType": "pdf",
+  "scraperUsed": "pdf-ocr",
+  "ocrUsed": true,
+  "content": "",
+  "contentLength": 0,
+  "error": "Unable to extract meaningful text from PDF"
+}
+
+⸻
+
+PDF Limits
+
+Add configurable safeguards.
+
+Suggested settings:
+
+MAX_PDF_SIZE_MB=25
+MAX_PDF_PAGES=100
+PDF_OCR_TIMEOUT_SECONDS=60
+
+If a PDF exceeds a configured limit, return a clear structured error.
+
+Do not allow one huge PDF to consume all browser/scraper capacity.
+
+⸻
+
+Browser Pool Independence
+
+PDF extraction should not consume Playwright browser contexts unless technically necessary.
+
+The existing browser pool currently exposes:
+
+{
+  "active": 0,
+  "queued": 0,
+  "browserRunning": false,
+  "maxContexts": 4,
+  "maxQueue": 20,
+  "utilisation": 0,
+  "warnThresholdPct": 80
+}
+
+Native PDF extraction and OCR should operate separately from the Playwright browser queue.
+
+Do not artificially place PDF extraction into the browser pool.
+
+If PDF OCR needs its own concurrency protection, create a small separate limit such as:
+
+MAX_CONCURRENT_PDF_OCR=2
+
+Make this configurable.
+
+⸻
+
+Logging
+
+Extend the existing request logging to capture PDF activity.
+
+Record:
+
+* request ID
+* URL
+* final URL
+* document type
+* page count
+* native page count
+* OCR page count
+* extraction method
+* PDF size
+* duration
+* success/failure
+* error reason
+
+Do not log authorization tokens.
+
+⸻
+
+Admin Console Integration
+
+The application already has or is building an /admin operations console.
+
+Add PDF statistics without changing the existing scraper dashboard behavior.
+
+Add metrics for:
+
+PDFs Processed
+Native PDF Extractions
+OCR Extractions
+Mixed Extractions
+PDF Failures
+Average PDF Duration
+
+Example:
+
+PDF Processing
+Total PDFs          87
+Native              71
+OCR                  9
+Mixed                6
+Failed               1
+
+On individual request detail pages, show:
+
+Document Type: PDF
+Pages: 14
+Native Pages: 11
+OCR Pages: 3
+Extraction: Mixed
+Duration: 5.3 seconds
+
+⸻
+
+Health Endpoint
+
+Do not break the existing /health response.
+
+Current response includes:
+
+{
+  "status": "healthy",
+  "service": "PayerNews Scraper",
+  "browserPool": {
+    "active": 0,
+    "queued": 0,
+    "browserRunning": false,
+    "maxContexts": 4,
+    "maxQueue": 20,
+    "utilisation": 0,
+    "warnThresholdPct": 80
+  }
+}
+
+You may optionally add a separate PDF processing section such as:
+
+{
+  "pdfPool": {
+    "active": 0,
+    "maxConcurrentOCR": 2
+  }
+}
+
+but do not remove or rename existing health fields.
+
+Keep /healthz behavior unchanged.
+
+⸻
+
+Power Automate Goal
+
+The goal is eventually to replace this current Power Automate PDF branch:
+
+HTTP GET PDF
+↓
+AI Builder — Recognize text in an image or document
+↓
+Execute Agent and Wait
+↓
+Parse JSON
+
+with:
+
+HTTP POST /api/scrape
+↓
+body('HTTP_-_Scrape')?['content']
+↓
+Execute Agent and Wait
+↓
+Parse JSON
+
+Therefore the API must return clean PDF text through the same content field currently used for webpage content.
+
+⸻
+
+Test UI
+
+Update the existing scraper testing UI so I can paste a PDF URL into the same URL field used for HTML testing.
+
+When I submit a PDF URL, display:
+
+* success/failure
+* document type
+* PDF title
+* page count
+* native pages
+* OCR pages
+* extraction method
+* duration
+* extracted character count
+* extracted content
+
+The same test button/interface should support HTML and PDFs.
+
+Do not create a completely separate test application unless necessary.
+
+⸻
+
+Automated Tests
+
+Add tests for:
+
+1. Standard selectable-text PDF
+2. Fully scanned PDF requiring OCR
+3. Mixed native/scanned PDF
+4. Multi-page PDF
+5. PDF containing tables
+6. PDF URL without .pdf extension
+7. URL ending in .pdf that actually returns HTML
+8. Redirect to PDF
+9. Invalid/corrupt PDF
+10. Password-protected PDF
+11. Oversized PDF
+12. PDF exceeding maximum pages
+13. OCR failure
+14. Timeout during PDF download
+15. Existing HTML scraper still works unchanged
+
+Regression testing the existing HTML scraper is critical.
+
+⸻
+
+Implementation Strategy
+
+Implement this incrementally.
+
+First:
+
+1. Detect PDFs.
+2. Download PDF.
+3. Extract native text with PyMuPDF.
+4. Return text through existing content.
+5. Verify existing HTML scraping remains unchanged.
+
+Then:
+
+6. Add page-level quality detection.
+7. Add OCR fallback.
+8. Add mixed extraction.
+9. Add safeguards and concurrency protection.
+10. Add admin metrics.
+11. Add automated tests.
+
+Do not attempt to redesign the entire scraper application.
+
+⸻
+
+Final Verification
+
+When finished, show me:
+
+1. Which files were changed
+2. Which dependencies were added
+3. How PDF detection works
+4. How native extraction works
+5. How OCR fallback works
+6. How mixed PDFs are handled
+7. What limits are configured
+8. How PDF requests appear in /admin
+9. A sample native PDF response
+10. A sample OCR PDF response
+11. A sample mixed PDF response
+12. Confirmation that normal HTML scraping still works
+13. Confirmation that the existing /api/scrape request format did not change
+
+Most importantly, do not break the current Power Automate integration.
