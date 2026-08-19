@@ -81,8 +81,10 @@ describe("getActivityBuckets (no DATABASE_URL → zero series from fallback)", (
     for (const b of buckets) {
       expect(Number.isInteger(b.static)).toBe(true);
       expect(Number.isInteger(b.playwright)).toBe(true);
+      expect(Number.isInteger(b.pdf)).toBe(true);
       expect(b.static).toBeGreaterThanOrEqual(0);
       expect(b.playwright).toBeGreaterThanOrEqual(0);
+      expect(b.pdf).toBeGreaterThanOrEqual(0);
     }
   });
 });

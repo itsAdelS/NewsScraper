@@ -345,6 +345,7 @@ export interface ActivityBucket {
   ts: number; // Unix epoch seconds (start of bucket)
   static: number;
   playwright: number;
+  pdf: number;
 }
 
 /**
@@ -367,7 +368,7 @@ export async function getActivityBuckets(
   const map = new Map<number, ActivityBucket>();
   for (let i = 0; i < totalBuckets; i++) {
     const ts = nowBucket - (totalBuckets - 1 - i) * bucketSecs;
-    map.set(ts, { ts, static: 0, playwright: 0 });
+    map.set(ts, { ts, static: 0, playwright: 0, pdf: 0 });
   }
 
   const m = await getDbModule();
@@ -384,6 +385,7 @@ export async function getActivityBuckets(
         bucketTs: sql<number>`floor(extract(epoch from ${t.createdAt}) / ${bSecs}) * ${bSecs}`,
         staticCount: count(sql`CASE WHEN ${t.scraperUsed} = 'static' THEN 1 END`),
         playwrightCount: count(sql`CASE WHEN ${t.scraperUsed} = 'playwright' THEN 1 END`),
+        pdfCount: count(sql`CASE WHEN ${t.documentType} = 'pdf' THEN 1 END`),
       })
       .from(t)
       .where(gte(t.createdAt, since))
@@ -397,6 +399,7 @@ export async function getActivityBuckets(
           ts,
           static: Number(row.staticCount),
           playwright: Number(row.playwrightCount),
+          pdf: Number(row.pdfCount),
         });
       }
     }

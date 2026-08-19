@@ -258,6 +258,7 @@ router.get("/", requireAdminPage, (_req, res) => {
   <div style="display:flex;gap:20px;margin-top:8px;font-size:12px;color:var(--muted)">
     <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#58a6ff;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:var(--red);border-radius:2px;margin-right:4px;vertical-align:middle"></span>PDF</span>
   </div>
   <div id="activity-tooltip" style="display:none;position:fixed;z-index:100;background:#1a2129;border:1px solid #2b3540;border-radius:8px;padding:10px 14px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.5)"></div>
 </div>
@@ -298,8 +299,8 @@ router.get("/", requireAdminPage, (_req, res) => {
   </div>
 </div>
 <h2>Recent scrapes</h2>
-<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
-<tbody id="recent-body"><tr class="norow"><td colspan="8" class="muted">Loading…</td></tr></tbody></table>
+<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Document</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
+<tbody id="recent-body"><tr class="norow"><td colspan="9" class="muted">Loading…</td></tr></tbody></table>
 <p class="footnote">Metrics refresh every 6 seconds. <a data-nav="/requests">Full request history →</a></p>`;
 
   const script = `
@@ -367,12 +368,13 @@ async function refreshRecent(){
       const cells = [
         new Date(r.createdAt).toLocaleTimeString(),
         r.requestId, r.domain || '—', r.route || '—',
-        r.success ? 'Success' : 'Failed',
+         (r.documentType || 'html').toUpperCase(),
+         r.success ? 'Success' : 'Failed',
         r.scraperUsed || '—', fmtDur(r.durationMs), r.contentLength.toLocaleString()
       ];
       cells.forEach((c, i) => {
         const td = document.createElement('td');
-        if (i === 4) { const b = document.createElement('span'); b.className = 'badge ' + (r.success ? 'green' : 'red'); b.textContent = c; td.appendChild(b); }
+         if (i === 5) { const b = document.createElement('span'); b.className = 'badge ' + (r.success ? 'green' : 'red'); b.textContent = c; td.appendChild(b); }
         else td.textContent = c;
         if (i === 1) td.className = 'mono';
         tr.appendChild(td);
@@ -400,7 +402,7 @@ function drawActivity(buckets){
   _activityLayout = { PL, PT, PB, PR, plotW, cssW, n: buckets.length || 1 };
   ctx.fillStyle = '#0f1419';
   ctx.fillRect(0, 0, W, H);
-  const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright));
+   const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright + (b.pdf || 0)));
   ctx.strokeStyle = '#1f2a35';
   ctx.lineWidth = 1;
   for (let i = 1; i <= 4; i++){
@@ -413,13 +415,16 @@ function drawActivity(buckets){
   buckets.forEach((b, i) => {
     const x = PL + i * barW + gap / 2;
     const bw = Math.max(1, barW - gap);
-    const total = b.static + b.playwright;
+     const pdf = b.pdf || 0;
+     const total = b.static + b.playwright + pdf;
     if (!total) return;
     const totalH = plotH * (total / maxVal);
-    const staticH = plotH * (b.static / maxVal);
-    const pwH = totalH - staticH;
-    if (pwH > 0.5){ ctx.fillStyle='#58a6ff'; ctx.fillRect(x, PT+plotH-pwH, bw, pwH); }
-    if (staticH > 0.5){ ctx.fillStyle='#3fb950'; ctx.fillRect(x, PT+plotH-totalH, bw, staticH); }
+     const staticH = plotH * (b.static / maxVal);
+     const pwH = plotH * (b.playwright / maxVal);
+     const pdfH = plotH * (pdf / maxVal);
+     if (staticH > 0.5){ ctx.fillStyle='#3fb950'; ctx.fillRect(x, PT+plotH-staticH, bw, staticH); }
+     if (pwH > 0.5){ ctx.fillStyle='#58a6ff'; ctx.fillRect(x, PT+plotH-staticH-pwH, bw, pwH); }
+     if (pdfH > 0.5){ ctx.fillStyle='#f85149'; ctx.fillRect(x, PT+plotH-staticH-pwH-pdfH, bw, pdfH); }
   });
   ctx.fillStyle = '#8b98a5';
   ctx.font = '10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
@@ -447,14 +452,16 @@ function initActivityTooltip(){
     const idx = Math.floor((mx - PL) / barW);
     if (idx < 0 || idx >= _activityBuckets.length) { tip.style.display='none'; return; }
     const b = _activityBuckets[idx];
-    const total = b.static + b.playwright;
+     const pdf = b.pdf || 0;
+     const total = b.static + b.playwright + pdf;
     const timeLabel = b.ts ? fmtBucketTime(b.ts * 1000) : ('Bucket ' + (idx+1));
     tip.innerHTML =
       '<div style="color:#8b98a5;margin-bottom:6px;font-size:11px">' + timeLabel + '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#3fb950;border-radius:2px"></span>Static<span style="margin-left:auto;font-weight:600">' + b.static + '</span></div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#58a6ff;border-radius:2px"></span>Playwright<span style="margin-left:auto;font-weight:600">' + b.playwright + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#f85149;border-radius:2px"></span>PDF<span style="margin-left:auto;font-weight:600">' + pdf + '</span></div>' +
       '<div style="border-top:1px solid #2b3540;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between"><span style="color:#8b98a5">Total</span><span style="font-weight:600">' + total + '</span></div>';
-    const tipW = 190, tipH = 105;
+     const tipW = 190, tipH = 125;
     let tx = e.clientX + 12;
     let ty = e.clientY - tipH - 8;
     if (tx + tipW > window.innerWidth - 8) tx = e.clientX - tipW - 12;
@@ -495,8 +502,8 @@ function requestsPage(errorsOnly: boolean): { body: string; script: string } {
   <button id="f-apply" class="primary">Apply</button>
   <button id="f-clear">Clear</button>
 </div>
-<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Status</th><th>Duration</th><th>${errorsOnly ? "Error" : "Content"}</th></tr></thead>
-<tbody id="rows"><tr class="norow"><td colspan="9" class="muted">Loading…</td></tr></tbody></table>
+<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Document</th><th>Result</th><th>Scraper</th><th>Status</th><th>Duration</th><th>${errorsOnly ? "Error" : "Content"}</th></tr></thead>
+<tbody id="rows"><tr class="norow"><td colspan="10" class="muted">Loading…</td></tr></tbody></table>
 <div class="pager">
   <button id="pg-prev">‹ Prev</button>
   <span id="pg-info">—</span>
@@ -520,19 +527,20 @@ async function load(){
   const d = await api('/requests?' + params());
   const tb = document.getElementById('rows');
   tb.textContent = '';
-  if (!d.rows.length) { tb.innerHTML = '<tr class="norow"><td colspan="9" class="muted">No matching requests.</td></tr>'; }
+   if (!d.rows.length) { tb.innerHTML = '<tr class="norow"><td colspan="10" class="muted">No matching requests.</td></tr>'; }
   for (const r of d.rows) {
     const tr = document.createElement('tr');
     tr.onclick = () => location.href = CONSOLE + '/requests/' + r.requestId;
     const cells = [
       fmtTime(r.createdAt), r.requestId, r.domain || '—', r.route || '—',
-      r.success ? 'Success' : 'Failed', r.scraperUsed || '—',
+       (r.documentType || 'html').toUpperCase(),
+       r.success ? 'Success' : 'Failed', r.scraperUsed || '—',
       r.httpStatus || '—', fmtDur(r.durationMs),
       ${errorsOnly ? "(r.errorMessage || '—')" : "r.contentLength.toLocaleString()"}
     ];
     cells.forEach((c, i) => {
       const td = document.createElement('td');
-      if (i === 4) { const b = document.createElement('span'); b.className = 'badge ' + (r.success ? 'green' : 'red'); b.textContent = c; td.appendChild(b); }
+       if (i === 5) { const b = document.createElement('span'); b.className = 'badge ' + (r.success ? 'green' : 'red'); b.textContent = c; td.appendChild(b); }
       else td.textContent = c;
       if (i === 1) td.className = 'mono';
       if (i === 8) { td.className = 'url'; td.title = c; }
