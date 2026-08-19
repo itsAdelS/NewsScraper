@@ -15,5 +15,8 @@ export type ScrapeResponseScraperUsed = typeof ScrapeResponseScraperUsed[keyof t
 export const ScrapeResponseScraperUsed = {
   static: 'static',
   playwright: 'playwright',
+  'pdf-native': 'pdf-native',
+  'pdf-ocr': 'pdf-ocr',
+  'pdf-mixed': 'pdf-mixed',
   '': '',
 } as const;

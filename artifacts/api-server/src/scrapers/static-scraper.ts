@@ -11,15 +11,19 @@
 
 import { BaseScraper, safeFetch } from "./base.js";
 import { UrlValidationError } from "../utils/validation.js";
-import type { EngineResult } from "./types.js";
+import type { EngineResult, FetchedHtmlPage } from "./types.js";
 
 export class StaticScraper extends BaseScraper {
-  async scrape(url: string, requestId: string): Promise<EngineResult> {
+  async scrape(
+    url: string,
+    requestId: string,
+    prefetched?: FetchedHtmlPage,
+  ): Promise<EngineResult> {
     this.log(requestId, "Static scraper: starting request", { url });
 
     let page;
     try {
-      page = await safeFetch(url);
+      page = prefetched ?? await safeFetch(url);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const statusCode =

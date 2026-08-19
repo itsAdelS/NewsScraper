@@ -9,22 +9,39 @@ export interface HealthStatus {
   status: string;
 }
 
-export interface PayerNewsHealthStatusBrowserPool {
+export type PayerNewsHealthStatusBrowserPool = {
+  /** Number of browser contexts currently in use. */
   active: number;
+  /** Number of requests waiting for a free context. */
   queued: number;
+  /** Whether the Playwright browser process is alive. */
   browserRunning: boolean;
+  /** Configured maximum number of concurrent browser contexts. */
   maxContexts: number;
+  /** Configured maximum queue depth before requests are rejected. */
   maxQueue: number;
   /** Pool utilisation as a percentage (0-100). */
   utilisation: number;
   /** The utilisation percentage at which status becomes degraded. */
   warnThresholdPct: number;
-}
+};
+
+/**
+ * PDF extraction concurrency pool (independent of Playwright).
+ */
+export type PayerNewsHealthStatusPdfPool = {
+  active: number;
+  queued: number;
+  maxConcurrent: number;
+  maxQueue: number;
+};
 
 export interface PayerNewsHealthStatus {
   status: string;
   service: string;
   browserPool?: PayerNewsHealthStatusBrowserPool;
+  /** PDF extraction concurrency pool (independent of Playwright). */
+  pdfPool?: PayerNewsHealthStatusPdfPool;
 }
 
 /**
@@ -60,7 +77,21 @@ export type ScrapeResponseScraperUsed = typeof ScrapeResponseScraperUsed[keyof t
 export const ScrapeResponseScraperUsed = {
   static: 'static',
   playwright: 'playwright',
+  'pdf-native': 'pdf-native',
+  'pdf-ocr': 'pdf-ocr',
+  'pdf-mixed': 'pdf-mixed',
   '': '',
+} as const;
+
+/**
+ * The detected resource type.
+ */
+export type ScrapeResponseDocumentType = typeof ScrapeResponseDocumentType[keyof typeof ScrapeResponseDocumentType];
+
+
+export const ScrapeResponseDocumentType = {
+  html: 'html',
+  pdf: 'pdf',
 } as const;
 
 /**
@@ -77,7 +108,7 @@ export interface ScrapeResponse {
   route: string;
   /** Which scraping engine produced the result. */
   scraperUsed: ScrapeResponseScraperUsed;
-  /** The page <title> text. */
+  /** The HTML page title or best available PDF title. */
   title: string;
   /** Clean readable text extracted from the page. This is the primary field for downstream AI classification. */
   content: string;
@@ -91,6 +122,30 @@ export interface ScrapeResponse {
   truncated: boolean;
   /** Human-readable error message. Only present when success is false. */
   error?: string;
+  /** The detected resource type. */
+  documentType?: ScrapeResponseDocumentType;
+  /** Whether at least one PDF page required OCR. */
+  ocrUsed?: boolean;
+  /**
+     * Number of pages in a PDF document.
+     * @minimum 0
+     */
+  pageCount?: number;
+  /**
+     * PDF pages that supplied meaningful native text.
+     * @minimum 0
+     */
+  nativePages?: number;
+  /**
+     * PDF pages whose text came from OCR.
+     * @minimum 0
+     */
+  ocrPages?: number;
+  /**
+     * Downloaded PDF size in bytes.
+     * @minimum 0
+     */
+  pdfSizeBytes?: number;
 }
 
 export interface ErrorResponse {

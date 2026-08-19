@@ -133,7 +133,13 @@ router.get("/admin/requests", requireAdminApi, async (req, res) => {
     search: str(q.search),
     result: result === "success" || result === "failure" ? result : undefined,
     scraper:
-      scraper === "static" || scraper === "playwright" ? scraper : undefined,
+      scraper === "static" ||
+      scraper === "playwright" ||
+      scraper === "pdf-native" ||
+      scraper === "pdf-ocr" ||
+      scraper === "pdf-mixed"
+        ? scraper
+        : undefined,
     domain: str(q.domain),
     route: str(q.route),
     errorsOnly: q.errorsOnly === "true",

@@ -1,5 +1,8 @@
 {pkgs}: {
   deps = [
+    pkgs.tesseract
+    pkgs.python313Packages.pymupdf
+    pkgs.python313
     pkgs.systemd
     pkgs.udev
     pkgs.gtk3

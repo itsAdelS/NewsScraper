@@ -41,7 +41,7 @@ const BLOCKED_HOSTNAMES = new Set([
   "metadata.goog",
 ]);
 
-/** Result returned by safeFetch. */
+/** Result returned by safeFetch (text-oriented). */
 export interface SafeFetchResult {
   html: string;
   finalUrl: string;
@@ -50,6 +50,43 @@ export interface SafeFetchResult {
   contentType: string | undefined;
   /** True if the response body was truncated to maxBodyBytes. */
   truncatedBody: boolean;
+}
+
+/**
+ * Result returned by safeFetchBinary — binary-safe, exposes the raw Buffer.
+ * All existing SafeFetchResult consumers are unaffected.
+ */
+export interface SafeFetchBinaryResult {
+  /** Raw response body as a Buffer (may be truncated — check truncatedBody). */
+  body: Buffer;
+  /** Final URL after all redirects. */
+  finalUrl: string;
+  /** HTTP status code of the final response. */
+  statusCode: number;
+  /** Content-Type header from the final response, if present. */
+  contentType: string | undefined;
+  /** True if the response body was truncated to maxBytes. */
+  truncatedBody: boolean;
+}
+
+/** Options accepted by safeFetchBinary. */
+export interface SafeFetchBinaryOptions {
+  /** Maximum response body size in bytes. Defaults to config.maxBodyBytes. */
+  maxBytes?: number;
+  /** Request timeout in milliseconds. Defaults to config.maxScraperTimeoutMs. */
+  timeoutMs?: number;
+  /** Value of the Accept header. Defaults to a browser-like value. */
+  accept?: string;
+  /**
+   * Optional lower body cap. When paired with extendBodyLimit, responses only
+   * continue to maxBytes when the callback identifies a resource that needs it.
+   */
+  softMaxBytes?: number;
+  extendBodyLimit?: (input: {
+    bodyPrefix: Buffer;
+    contentType: string | undefined;
+    url: string;
+  }) => boolean;
 }
 
 /**
@@ -157,10 +194,14 @@ function issueRequest(
   urlStr: string,
   timeoutMs: number,
   maxBodyBytes: number,
+  accept?: string,
+  softMaxBodyBytes = maxBodyBytes,
+  extendBodyLimit?: SafeFetchBinaryOptions["extendBodyLimit"],
 ): Promise<{
   statusCode: number;
   headers: http.IncomingHttpHeaders;
   body: Buffer;
+  truncatedBody: boolean;
 }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(urlStr);
@@ -174,6 +215,7 @@ function issueRequest(
       headers: {
         "User-Agent": SCRAPER_USER_AGENT,
         Accept:
+          accept ??
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         Host: parsedUrl.host,
@@ -185,34 +227,71 @@ function issueRequest(
     };
 
     const transport = isHttps ? https : http;
+    let settled = false;
     const req = transport.request(reqOptions, (res) => {
       const chunks: Buffer[] = [];
       let totalBytes = 0;
-      let oversize = false;
+      let effectiveMaxBodyBytes = softMaxBodyBytes;
+      let bodyLimitResolved = !extendBodyLimit;
+      let bodyPrefix = Buffer.alloc(0);
 
-      res.on("data", (chunk: Buffer) => {
-        if (oversize) return;
-        totalBytes += chunk.length;
-        if (totalBytes > maxBodyBytes) {
-          oversize = true;
-          req.destroy(); // Stop reading; partial body is acceptable.
-          return;
-        }
-        chunks.push(chunk);
-      });
-
-      res.on("end", () => {
+      const finish = (truncatedBody: boolean): void => {
+        if (settled) return;
+        settled = true;
         resolve({
           statusCode: res.statusCode ?? 0,
           headers: res.headers,
           body: Buffer.concat(chunks),
+          truncatedBody,
         });
+      };
+
+      res.on("data", (chunk: Buffer) => {
+        if (!bodyLimitResolved) {
+          const needed = 1024 - bodyPrefix.length;
+          if (needed > 0) {
+            bodyPrefix = Buffer.concat([
+              bodyPrefix,
+              chunk.subarray(0, needed),
+            ]);
+          }
+          if (bodyPrefix.length >= 1024) {
+            const header = res.headers["content-type"];
+            const contentType = Array.isArray(header) ? header[0] : header;
+            effectiveMaxBodyBytes = extendBodyLimit?.({
+              bodyPrefix,
+              contentType,
+              url: urlStr,
+            })
+              ? maxBodyBytes
+              : softMaxBodyBytes;
+            bodyLimitResolved = true;
+          }
+        }
+
+        const remaining = effectiveMaxBodyBytes - totalBytes;
+        if (chunk.length > remaining) {
+          if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+          totalBytes = effectiveMaxBodyBytes;
+          finish(true);
+          res.destroy();
+          return;
+        }
+        chunks.push(chunk);
+        totalBytes += chunk.length;
       });
 
-      res.on("error", reject);
+      res.on("end", () => {
+        finish(false);
+      });
+
+      res.on("error", (err) => {
+        if (!settled) reject(err);
+      });
     });
 
     req.on("error", (err: Error) => {
+      if (settled) return;
       const msg = err.message ?? "";
       // Surface SSRF blocks as UrlValidationError so callers can map them to
       // HTTP 403 rather than 500.
@@ -242,8 +321,45 @@ function issueRequest(
  *  - Enforces body size and timeout limits.
  *  - Throws `UrlValidationError` for SSRF violations (HTTP 403).
  *  - Throws a plain `Error` for network/timeout issues.
+ *
+ * Returns a text (UTF-8) body via the `html` field.
+ * Use `safeFetchBinary` when you need the raw Buffer (e.g. PDF downloads).
  */
 export async function safeFetch(startUrl: string): Promise<SafeFetchResult> {
+  const bin = await safeFetchBinary(startUrl);
+  const html = bin.body.toString("utf8");
+  return {
+    html,
+    finalUrl: bin.finalUrl,
+    statusCode: bin.statusCode,
+    contentType: bin.contentType,
+    truncatedBody: bin.truncatedBody,
+  };
+}
+
+/**
+ * Binary-safe variant of safeFetch.
+ *
+ * Returns the raw response Buffer instead of decoding to UTF-8. Useful for
+ * detecting and downloading PDF/binary responses without charset corruption.
+ *
+ * Accepts configurable timeout, max body size, and Accept header so the PDF
+ * pipeline can tune them independently of the HTML scraper defaults.
+ *
+ * All SSRF protections and redirect handling are identical to safeFetch.
+ */
+export async function safeFetchBinary(
+  startUrl: string,
+  opts: SafeFetchBinaryOptions = {},
+): Promise<SafeFetchBinaryResult> {
+  const maxBodyBytes = opts.maxBytes ?? config.maxBodyBytes;
+  const timeoutMs = opts.timeoutMs ?? config.maxScraperTimeoutMs;
+  const accept = opts.accept;
+  const softMaxBodyBytes = Math.min(
+    opts.softMaxBytes ?? maxBodyBytes,
+    maxBodyBytes,
+  );
+
   let currentUrl = startUrl;
   let redirectsLeft = config.maxRedirects;
 
@@ -257,19 +373,17 @@ export async function safeFetch(startUrl: string): Promise<SafeFetchResult> {
       );
     }
 
-    let response: Awaited<ReturnType<typeof issueRequest>>;
-    try {
-      response = await issueRequest(
-        currentUrl,
-        config.maxScraperTimeoutMs,
-        config.maxBodyBytes,
-      );
-    } catch (err) {
-      throw err; // UrlValidationError or plain Error — let callers handle.
-    }
+    const response = await issueRequest(
+      currentUrl,
+      timeoutMs,
+      maxBodyBytes,
+      accept,
+      softMaxBodyBytes,
+      opts.extendBodyLimit,
+    );
 
     // Handle redirects manually so each hop is validated by ssrfSafeLookup.
-    const { statusCode, headers, body } = response;
+    const { statusCode, headers, body, truncatedBody } = response;
 
     if (statusCode >= 300 && statusCode < 400) {
       if (redirectsLeft <= 0) {
@@ -287,12 +401,10 @@ export async function safeFetch(startUrl: string): Promise<SafeFetchResult> {
       continue;
     }
 
-    const html = body.toString("utf8");
-    const truncatedBody = body.length >= config.maxBodyBytes;
     const contentType = Array.isArray(headers["content-type"])
       ? headers["content-type"][0]
       : headers["content-type"];
 
-    return { html, finalUrl: currentUrl, statusCode, contentType, truncatedBody };
+    return { body, finalUrl: currentUrl, statusCode, contentType, truncatedBody };
   }
 }

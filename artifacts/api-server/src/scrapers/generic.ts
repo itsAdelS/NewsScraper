@@ -10,16 +10,20 @@
 import { BaseScraper } from "./base.js";
 import { StaticScraper } from "./static-scraper.js";
 import { BrowserScraper } from "./browser-scraper.js";
-import type { EngineResult } from "./types.js";
+import type { EngineResult, FetchedHtmlPage } from "./types.js";
 
 export class GenericScraper extends BaseScraper {
   private readonly static = new StaticScraper();
   private readonly browser = new BrowserScraper();
 
-  async scrape(url: string, requestId: string): Promise<EngineResult> {
+  async scrape(
+    url: string,
+    requestId: string,
+    prefetched?: FetchedHtmlPage,
+  ): Promise<EngineResult> {
     // --- Attempt 1: static scraper ---
     this.log(requestId, "Generic scraper: trying static engine");
-    const staticResult = await this.static.scrape(url, requestId);
+    const staticResult = await this.static.scrape(url, requestId, prefetched);
 
     if (staticResult.success) {
       this.log(requestId, "Generic scraper: static engine succeeded", {

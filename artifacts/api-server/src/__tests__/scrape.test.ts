@@ -40,6 +40,22 @@ vi.mock("../scrapers/registry.js", async (importOriginal) => {
   };
 });
 
+// Mock safeFetchBinary so the PDF-detection sniff returns HTML by default,
+// keeping all existing HTML-path tests on the HTML branch.
+vi.mock("../utils/safe-fetch.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/safe-fetch.js")>();
+  return {
+    ...actual,
+    safeFetchBinary: vi.fn().mockResolvedValue({
+      body: Buffer.from("<html><body>content</body></html>"),
+      finalUrl: "https://example.com/policy",
+      statusCode: 200,
+      contentType: "text/html; charset=utf-8",
+      truncatedBody: false,
+    }),
+  };
+});
+
 import { getScraper } from "../scrapers/registry.js";
 const mockGetScraper = vi.mocked(getScraper);
 

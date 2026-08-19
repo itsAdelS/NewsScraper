@@ -33,7 +33,7 @@ export default function Home() {
       <main className="flex-1 w-full max-w-5xl mx-auto py-12 px-6">
         <div className="mb-10 space-y-3">
           <h2 className="text-3xl font-bold tracking-tight">Test Extraction Pipeline</h2>
-          <p className="text-muted-foreground text-lg">Enter a payer webpage URL and review the structured content extraction.</p>
+          <p className="text-muted-foreground text-lg">Enter a payer webpage or PDF URL and review the structured content extraction.</p>
         </div>
         
         <div className="bg-card border rounded-xl p-6 md:p-8 shadow-sm mb-8">

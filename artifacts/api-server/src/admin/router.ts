@@ -288,6 +288,14 @@ router.get("/", requireAdminPage, (_req, res) => {
     <div class="kv"><span>Avg / median duration</span><span id="s-dur">—</span></div>
     <div class="kv"><span>Longest duration</span><span id="s-max">—</span></div>
   </div>
+  <div class="card"><h2>PDF Processing (7 days)</h2>
+    <div class="kv"><span>Total PDFs</span><span id="pdf-total">—</span></div>
+    <div class="kv"><span>Native</span><span id="pdf-native">—</span></div>
+    <div class="kv"><span>OCR</span><span id="pdf-ocr">—</span></div>
+    <div class="kv"><span>Mixed</span><span id="pdf-mixed">—</span></div>
+    <div class="kv"><span>Failed</span><span id="pdf-failed">—</span></div>
+    <div class="kv"><span>Average duration</span><span id="pdf-duration">—</span></div>
+  </div>
 </div>
 <h2>Recent scrapes</h2>
 <table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
@@ -339,6 +347,12 @@ async function refreshStats(){
     document.getElementById('s-fallback').textContent = s.playwrightFallbackRatePct + '%';
     document.getElementById('s-dur').textContent = fmtDur(s.averageDurationMs) + ' / ' + fmtDur(s.medianDurationMs);
     document.getElementById('s-max').textContent = fmtDur(s.longestDurationMs);
+    document.getElementById('pdf-total').textContent = s.pdfsProcessed;
+    document.getElementById('pdf-native').textContent = s.nativePdfExtractions;
+    document.getElementById('pdf-ocr').textContent = s.ocrPdfExtractions;
+    document.getElementById('pdf-mixed').textContent = s.mixedPdfExtractions;
+    document.getElementById('pdf-failed').textContent = s.pdfFailures;
+    document.getElementById('pdf-duration').textContent = fmtDur(s.averagePdfDurationMs);
   }catch(e){}
 }
 async function refreshRecent(){
@@ -475,7 +489,7 @@ function requestsPage(errorsOnly: boolean): { body: string; script: string } {
       ? ""
       : `<select id="f-result"><option value="">All results</option><option value="success">Success</option><option value="failure">Failure</option></select>`
   }
-  <select id="f-scraper"><option value="">All scrapers</option><option value="static">Static</option><option value="playwright">Playwright</option></select>
+  <select id="f-scraper"><option value="">All scrapers</option><option value="static">Static</option><option value="playwright">Playwright</option><option value="pdf-native">PDF Native</option><option value="pdf-ocr">PDF OCR</option><option value="pdf-mixed">PDF Mixed</option></select>
   <input id="f-domain" placeholder="Domain" style="width:150px">
   <input id="f-route" placeholder="Route" style="width:110px">
   <button id="f-apply" class="primary">Apply</button>
@@ -565,11 +579,19 @@ router.get("/requests/:requestId", requireAdminPage, (req, res) => {
   </div>
   <div class="card"><h2>Request</h2>
     <div class="kv"><span>Timestamp</span><span id="d-time">—</span></div>
+    <div class="kv"><span>Document type</span><span id="d-document">—</span></div>
     <div class="kv"><span>Route</span><span id="d-route">—</span></div>
     <div class="kv"><span>Domain</span><span id="d-domain">—</span></div>
     <div class="kv"><span>Queue depth at start</span><span id="d-queue">—</span></div>
     <div class="kv"><span>Active contexts at start</span><span id="d-active">—</span></div>
   </div>
+</div>
+<div class="card" id="d-pdf-card" style="display:none;margin-bottom:16px"><h2>PDF Extraction</h2>
+  <div class="kv"><span>Pages</span><span id="d-pages">—</span></div>
+  <div class="kv"><span>Native pages</span><span id="d-native-pages">—</span></div>
+  <div class="kv"><span>OCR pages</span><span id="d-ocr-pages">—</span></div>
+  <div class="kv"><span>Extraction</span><span id="d-extraction">—</span></div>
+  <div class="kv"><span>PDF size</span><span id="d-pdf-size">—</span></div>
 </div>
 <div class="card detail" style="margin-bottom:16px">
   <dt>Original URL</dt><dd class="mono" id="d-url" style="word-break:break-all">—</dd>
@@ -594,9 +616,16 @@ document.getElementById('d-title').textContent = reqId;
   set('d-status', d.httpStatus || '—'); set('d-scraper', d.scraperUsed || '—');
   set('d-fallback', d.playwrightFallback ? 'Yes' : 'No');
   set('d-duration', fmtDur(d.durationMs)); set('d-length', d.contentLength.toLocaleString());
-  set('d-time', fmtTime(d.createdAt)); set('d-route', d.route || '—'); set('d-domain', d.domain || '—');
+  set('d-time', fmtTime(d.createdAt)); set('d-document', (d.documentType || 'html').toUpperCase());
+  set('d-route', d.route || '—'); set('d-domain', d.domain || '—');
   set('d-queue', d.queueDepthAtStart); set('d-active', d.activeContextsAtStart);
   set('d-url', d.url); set('d-final', d.finalUrl || '—'); set('d-error', d.errorMessage || '—');
+  if (d.documentType === 'pdf') {
+    document.getElementById('d-pdf-card').style.display = 'block';
+    set('d-pages', d.pageCount); set('d-native-pages', d.nativePages); set('d-ocr-pages', d.ocrPages);
+    set('d-extraction', d.scraperUsed || '—');
+    set('d-pdf-size', d.pdfSizeBytes ? (d.pdfSizeBytes / 1024 / 1024).toFixed(2) + ' MB' : '—');
+  }
   if (d.contentPreview) {
     document.getElementById('d-preview-card').style.display = 'block';
     document.getElementById('d-preview').textContent = d.contentPreview;

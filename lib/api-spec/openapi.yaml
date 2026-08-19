@@ -45,11 +45,12 @@ paths:
     post:
       operationId: scrape
       tags: [scrape]
-      summary: Scrape a payer webpage
+      summary: Scrape a payer webpage or PDF
       description: >
-        Visits the supplied URL, extracts meaningful text content, and returns
-        it as structured JSON. Requires a valid Bearer token in the Authorization
-        header. Always returns JSON — never HTML.
+        Visits the supplied URL, detects whether it is HTML or PDF, extracts
+        meaningful text content, and returns it as structured JSON. Requires a
+        valid Bearer token in the Authorization header. Always returns JSON —
+        never HTML.
       security:
         - bearerAuth: []
       requestBody:
@@ -174,6 +175,23 @@ components:
             - maxQueue
             - utilisation
             - warnThresholdPct
+        pdfPool:
+          type: object
+          description: PDF extraction concurrency pool (independent of Playwright).
+          properties:
+            active:
+              type: integer
+            queued:
+              type: integer
+            maxConcurrent:
+              type: integer
+            maxQueue:
+              type: integer
+          required:
+            - active
+            - queued
+            - maxConcurrent
+            - maxQueue
       required:
         - status
         - service
@@ -188,7 +206,7 @@ components:
           example: "https://example.com/policy-page"
         route:
           type: string
-          enum: [generic, anthem, aetna, uhc, cigna]
+          enum: [generic, anthem, aetna, uhc, cigna, bcbs, tmhp, nhpri]
           description: >
             Payer routing hint. If omitted, the route is detected from the URL
             domain, or falls back to "generic".
@@ -216,11 +234,11 @@ components:
           description: The route used (explicit or auto-detected).
         scraperUsed:
           type: string
-          enum: [static, playwright, ""]
+          enum: [static, playwright, pdf-native, pdf-ocr, pdf-mixed, ""]
           description: Which scraping engine produced the result.
         title:
           type: string
-          description: The page <title> text.
+          description: The HTML page title or best available PDF title.
         content:
           type: string
           description: >
@@ -243,6 +261,29 @@ components:
         error:
           type: string
           description: Human-readable error message. Only present when success is false.
+        documentType:
+          type: string
+          enum: [html, pdf]
+          description: The detected resource type.
+        ocrUsed:
+          type: boolean
+          description: Whether at least one PDF page required OCR.
+        pageCount:
+          type: integer
+          minimum: 0
+          description: Number of pages in a PDF document.
+        nativePages:
+          type: integer
+          minimum: 0
+          description: PDF pages that supplied meaningful native text.
+        ocrPages:
+          type: integer
+          minimum: 0
+          description: PDF pages whose text came from OCR.
+        pdfSizeBytes:
+          type: integer
+          minimum: 0
+          description: Downloaded PDF size in bytes.
       required:
         - success
         - url

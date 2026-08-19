@@ -5,21 +5,13 @@
  * API specification — PayerNews Scraper
  * OpenAPI spec version: 0.1.0
  */
-
-export interface PayerNewsHealthStatusBrowserPool {
-  active: number;
-  queued: number;
-  browserRunning: boolean;
-  maxContexts: number;
-  maxQueue: number;
-  /** Pool utilisation as a percentage (0-100). */
-  utilisation: number;
-  /** The utilisation percentage at which status becomes degraded. */
-  warnThresholdPct: number;
-}
+import type { PayerNewsHealthStatusBrowserPool } from './payerNewsHealthStatusBrowserPool';
+import type { PayerNewsHealthStatusPdfPool } from './payerNewsHealthStatusPdfPool';
 
 export interface PayerNewsHealthStatus {
   status: string;
   service: string;
   browserPool?: PayerNewsHealthStatusBrowserPool;
+  /** PDF extraction concurrency pool (independent of Playwright). */
+  pdfPool?: PayerNewsHealthStatusPdfPool;
 }

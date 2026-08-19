@@ -131,7 +131,7 @@ export function recordScrapeRequest(row: InsertScrapeRequest): void {
 export interface RequestQuery {
   search?: string; // matches request ID, URL, or domain
   result?: "success" | "failure";
-  scraper?: "static" | "playwright";
+  scraper?: "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed";
   domain?: string;
   route?: string;
   errorsOnly?: boolean;
@@ -226,6 +226,12 @@ export interface ScrapeStats {
   averageDurationMs: number;
   medianDurationMs: number;
   longestDurationMs: number;
+  pdfsProcessed: number;
+  nativePdfExtractions: number;
+  ocrPdfExtractions: number;
+  mixedPdfExtractions: number;
+  pdfFailures: number;
+  averagePdfDurationMs: number;
 }
 
 const EMPTY_STATS: ScrapeStats = {
@@ -241,6 +247,12 @@ const EMPTY_STATS: ScrapeStats = {
   averageDurationMs: 0,
   medianDurationMs: 0,
   longestDurationMs: 0,
+  pdfsProcessed: 0,
+  nativePdfExtractions: 0,
+  ocrPdfExtractions: 0,
+  mixedPdfExtractions: 0,
+  pdfFailures: 0,
+  averagePdfDurationMs: 0,
 };
 
 export async function getScrapeStats(): Promise<ScrapeStats> {
@@ -280,6 +292,22 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
         avgMs: sql<number | null>`AVG(${t.durationMs})`,
         medianMs: sql<number | null>`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${t.durationMs})`,
         maxMs: sql<number | null>`MAX(${t.durationMs})`,
+        pdfsProcessed: count(
+          sql`CASE WHEN ${t.documentType} = 'pdf' THEN 1 END`,
+        ),
+        nativePdfExtractions: count(
+          sql`CASE WHEN ${t.success} AND ${t.scraperUsed} = 'pdf-native' THEN 1 END`,
+        ),
+        ocrPdfExtractions: count(
+          sql`CASE WHEN ${t.success} AND ${t.scraperUsed} = 'pdf-ocr' THEN 1 END`,
+        ),
+        mixedPdfExtractions: count(
+          sql`CASE WHEN ${t.success} AND ${t.scraperUsed} = 'pdf-mixed' THEN 1 END`,
+        ),
+        pdfFailures: count(
+          sql`CASE WHEN ${t.documentType} = 'pdf' AND NOT ${t.success} THEN 1 END`,
+        ),
+        averagePdfDurationMs: sql<number | null>`AVG(CASE WHEN ${t.documentType} = 'pdf' THEN ${t.durationMs} END)`,
       })
       .from(t)
       .where(gte(t.createdAt, weekAgo)),
@@ -302,6 +330,12 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
     averageDurationMs: Math.round(Number(w.avgMs ?? 0)),
     medianDurationMs: Math.round(Number(w.medianMs ?? 0)),
     longestDurationMs: Math.round(Number(w.maxMs ?? 0)),
+    pdfsProcessed: w.pdfsProcessed,
+    nativePdfExtractions: w.nativePdfExtractions,
+    ocrPdfExtractions: w.ocrPdfExtractions,
+    mixedPdfExtractions: w.mixedPdfExtractions,
+    pdfFailures: w.pdfFailures,
+    averagePdfDurationMs: Math.round(Number(w.averagePdfDurationMs ?? 0)),
   };
 }
 

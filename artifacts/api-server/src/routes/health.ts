@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { browserPool } from "../scrapers/browser-pool.js";
+import { pdfPool } from "../scrapers/pdf-pool.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 
@@ -51,6 +52,7 @@ router.get("/health", (_req, res) => {
       utilisation: Math.round(utilisation * 100),
       warnThresholdPct: Math.round(poolWarnThreshold * 100),
     },
+    pdfPool: pdfPool.stats,
   });
 });
 

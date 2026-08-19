@@ -88,6 +88,47 @@ export const config = {
     process.env.PAUSE_RETRY_AFTER_SECONDS ?? "300",
     10,
   ),
+
+  // ── PDF pipeline ────────────────────────────────────────────────────────────
+
+  /** Maximum PDF file size to process in megabytes (default: 25 MB). */
+  maxPdfSizeMb: parseInt(process.env.MAX_PDF_SIZE_MB ?? "25", 10),
+
+  /** Maximum number of pages to process in a single PDF (default: 100). */
+  maxPdfPages: parseInt(process.env.MAX_PDF_PAGES ?? "100", 10),
+
+  /** Timeout in seconds for the OCR worker process (default: 60 s). */
+  pdfOcrTimeoutSeconds: parseInt(
+    process.env.PDF_OCR_TIMEOUT_SECONDS ?? "60",
+    10,
+  ),
+
+  /**
+   * Maximum number of concurrent PDF OCR operations.
+   * Independent of the browser pool (default: 2).
+   */
+  maxConcurrentPdfOcr: parseInt(
+    process.env.MAX_CONCURRENT_PDF_OCR ?? "2",
+    10,
+  ),
+
+  /**
+   * Maximum number of PDF scrape requests that may wait in the PDF pool queue.
+   * Excess requests receive HTTP 503.
+   */
+  pdfMaxQueue: parseInt(process.env.PDF_MAX_QUEUE ?? "10", 10),
+
+  /**
+   * Minimum number of native characters on a page for it to be considered
+   * readable (no OCR needed).
+   */
+  pdfMinNativeChars: parseInt(process.env.PDF_MIN_NATIVE_CHARS ?? "80", 10),
+
+  /** Minimum number of native words on a page for it to be readable. */
+  pdfMinNativeWords: parseInt(process.env.PDF_MIN_NATIVE_WORDS ?? "8", 10),
+
+  /** DPI used for Tesseract OCR rendering (default: 200). */
+  pdfOcrDpi: parseInt(process.env.PDF_OCR_DPI ?? "200", 10),
 } as const;
 
 /** User-agent string sent with all scraper HTTP requests. */

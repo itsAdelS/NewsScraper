@@ -219,8 +219,8 @@ export const getScrapeUrl = () => {
 }
 
 /**
- * Visits the supplied URL, extracts meaningful text content, and returns it as structured JSON. Requires a valid Bearer token in the Authorization header. Always returns JSON — never HTML.
- * @summary Scrape a payer webpage
+ * Visits the supplied URL, detects whether it is HTML or PDF, extracts meaningful text content, and returns it as structured JSON. Requires a valid Bearer token in the Authorization header. Always returns JSON — never HTML.
+ * @summary Scrape a payer webpage or PDF
  */
 export const scrape = async (scrapeRequest: ScrapeRequest, options?: Parameters<typeof customFetch>[1]): Promise<ScrapeResponse> => {
 
@@ -269,7 +269,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ScrapeMutationError = ErrorType<ScrapeResponse | ErrorResponse>
 
     /**
- * @summary Scrape a payer webpage
+ * @summary Scrape a payer webpage or PDF
  */
 export const useScrape = <TError = ErrorType<ScrapeResponse | ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof scrape>>, TError,{data: BodyType<ScrapeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -78,6 +78,14 @@ export function ResultsPanel({ data, error }: { data?: ScrapeResponse; error?: a
           <div className="bg-muted/40 p-5 border-b grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
             <div>
               <p className="text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" /> Document
+              </p>
+              <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-document-type">
+                {(result.documentType ?? 'html').toUpperCase()}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground mb-1.5 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5" /> Route
               </p>
               <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-route">
@@ -92,6 +100,34 @@ export function ResultsPanel({ data, error }: { data?: ScrapeResponse; error?: a
                 {result.scraperUsed || 'unknown'}
               </p>
             </div>
+            {result.documentType === 'pdf' && (
+              <>
+                <div>
+                  <p className="text-muted-foreground mb-1.5">Pages</p>
+                  <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-page-count">
+                    {result.pageCount ?? 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1.5">Native pages</p>
+                  <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-native-pages">
+                    {result.nativePages ?? 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1.5">OCR pages</p>
+                  <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-ocr-pages">
+                    {result.ocrPages ?? 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1.5">OCR used</p>
+                  <p className="font-medium font-mono text-[13px] bg-background px-2 py-1 rounded border inline-block" data-testid="text-ocr-used">
+                    {result.ocrUsed ? 'Yes' : 'No'}
+                  </p>
+                </div>
+              </>
+            )}
             <div>
               <p className="text-muted-foreground mb-1.5 flex items-center gap-1.5">
                 <Globe2 className="w-3.5 h-3.5" /> HTTP Status

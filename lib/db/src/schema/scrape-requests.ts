@@ -27,8 +27,16 @@ export const scrapeRequestsTable = pgTable(
     finalUrl: text("final_url").notNull().default(""),
     domain: text("domain").notNull().default(""),
     route: text("route").notNull().default(""),
-    /** "static" | "playwright" | "" */
+    /** "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed" | "" */
     scraperUsed: text("scraper_used").notNull().default(""),
+    /** Resource type processed by the scrape pipeline. */
+    documentType: text("document_type").notNull().default("html"),
+    /** PDF extraction metadata (zero/false for HTML and legacy rows). */
+    ocrUsed: boolean("ocr_used").notNull().default(false),
+    pageCount: integer("page_count").notNull().default(0),
+    nativePages: integer("native_pages").notNull().default(0),
+    ocrPages: integer("ocr_pages").notNull().default(0),
+    pdfSizeBytes: integer("pdf_size_bytes").notNull().default(0),
     httpStatus: integer("http_status").notNull().default(0),
     success: boolean("success").notNull().default(false),
     contentLength: integer("content_length").notNull().default(0),

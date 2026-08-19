@@ -23,32 +23,63 @@ export const HealthCheckResponse = zod.object({
  */
 export const PayerNewsHealthCheckResponse = zod.object({
   "status": zod.string(),
-  "service": zod.string()
+  "service": zod.string(),
+  "browserPool": zod.object({
+  "active": zod.int().describe('Number of browser contexts currently in use.'),
+  "queued": zod.int().describe('Number of requests waiting for a free context.'),
+  "browserRunning": zod.boolean().describe('Whether the Playwright browser process is alive.'),
+  "maxContexts": zod.int().describe('Configured maximum number of concurrent browser contexts.'),
+  "maxQueue": zod.int().describe('Configured maximum queue depth before requests are rejected.'),
+  "utilisation": zod.int().describe('Pool utilisation as a percentage (0-100).'),
+  "warnThresholdPct": zod.int().describe('The utilisation percentage at which status becomes degraded.')
+}).optional(),
+  "pdfPool": zod.object({
+  "active": zod.int(),
+  "queued": zod.int(),
+  "maxConcurrent": zod.int(),
+  "maxQueue": zod.int()
+}).optional().describe('PDF extraction concurrency pool (independent of Playwright).')
 })
 
 
 /**
- * Visits the supplied URL, extracts meaningful text content, and returns it as structured JSON. Requires a valid Bearer token in the Authorization header. Always returns JSON — never HTML.
- * @summary Scrape a payer webpage
+ * Visits the supplied URL, detects whether it is HTML or PDF, extracts meaningful text content, and returns it as structured JSON. Requires a valid Bearer token in the Authorization header. Always returns JSON — never HTML.
+ * @summary Scrape a payer webpage or PDF
  */
 export const ScrapeBody = zod.object({
   "url": zod.url().describe('The webpage URL to scrape. Must be http or https.'),
-  "route": zod.enum(['generic', 'anthem', 'aetna', 'uhc', 'cigna']).optional().describe('Payer routing hint. If omitted, the route is detected from the URL domain, or falls back to \"generic\".\n')
+  "route": zod.enum(['generic', 'anthem', 'aetna', 'uhc', 'cigna', 'bcbs', 'tmhp', 'nhpri']).optional().describe('Payer routing hint. If omitted, the route is detected from the URL domain, or falls back to \"generic\".\n')
 })
+
+export const scrapeResponsePageCountMin = 0;
+
+export const scrapeResponseNativePagesMin = 0;
+
+export const scrapeResponseOcrPagesMin = 0;
+
+export const scrapeResponsePdfSizeBytesMin = 0;
+
+
 
 export const ScrapeResponse = zod.object({
   "success": zod.boolean().describe('Whether meaningful content was successfully extracted.'),
   "url": zod.string().describe('The original URL submitted in the request.'),
   "finalUrl": zod.string().describe('The final URL after following redirects.'),
   "route": zod.string().describe('The route used (explicit or auto-detected).'),
-  "scraperUsed": zod.enum(['static', 'playwright', '']).describe('Which scraping engine produced the result.'),
-  "title": zod.string().describe('The page <title> text.'),
+  "scraperUsed": zod.enum(['static', 'playwright', 'pdf-native', 'pdf-ocr', 'pdf-mixed', '']).describe('Which scraping engine produced the result.'),
+  "title": zod.string().describe('The HTML page title or best available PDF title.'),
   "content": zod.string().describe('Clean readable text extracted from the page. This is the primary field for downstream AI classification.\n'),
   "contentLength": zod.int().describe('Character count of the content field.'),
   "statusCode": zod.int().describe('HTTP status code returned by the target page.'),
   "durationMs": zod.int().describe('Total scraper execution time in milliseconds.'),
   "truncated": zod.boolean().describe('True if content was truncated to the configured maximum length (default 500,000 characters).\n'),
-  "error": zod.string().optional().describe('Human-readable error message. Only present when success is false.')
+  "error": zod.string().optional().describe('Human-readable error message. Only present when success is false.'),
+  "documentType": zod.enum(['html', 'pdf']).optional().describe('The detected resource type.'),
+  "ocrUsed": zod.boolean().optional().describe('Whether at least one PDF page required OCR.'),
+  "pageCount": zod.int().min(scrapeResponsePageCountMin).optional().describe('Number of pages in a PDF document.'),
+  "nativePages": zod.int().min(scrapeResponseNativePagesMin).optional().describe('PDF pages that supplied meaningful native text.'),
+  "ocrPages": zod.int().min(scrapeResponseOcrPagesMin).optional().describe('PDF pages whose text came from OCR.'),
+  "pdfSizeBytes": zod.int().min(scrapeResponsePdfSizeBytesMin).optional().describe('Downloaded PDF size in bytes.')
 }).describe('Returned for every POST \/api\/scrape call — both success and failure. Always JSON, never HTML.\n')
 
 

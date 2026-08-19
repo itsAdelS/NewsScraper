@@ -5,6 +5,7 @@
  * API specification — PayerNews Scraper
  * OpenAPI spec version: 0.1.0
  */
+import type { ScrapeResponseDocumentType } from './scrapeResponseDocumentType';
 import type { ScrapeResponseScraperUsed } from './scrapeResponseScraperUsed';
 
 /**
@@ -21,7 +22,7 @@ export interface ScrapeResponse {
   route: string;
   /** Which scraping engine produced the result. */
   scraperUsed: ScrapeResponseScraperUsed;
-  /** The page <title> text. */
+  /** The HTML page title or best available PDF title. */
   title: string;
   /** Clean readable text extracted from the page. This is the primary field for downstream AI classification. */
   content: string;
@@ -35,4 +36,28 @@ export interface ScrapeResponse {
   truncated: boolean;
   /** Human-readable error message. Only present when success is false. */
   error?: string;
+  /** The detected resource type. */
+  documentType?: ScrapeResponseDocumentType;
+  /** Whether at least one PDF page required OCR. */
+  ocrUsed?: boolean;
+  /**
+     * Number of pages in a PDF document.
+     * @minimum 0
+     */
+  pageCount?: number;
+  /**
+     * PDF pages that supplied meaningful native text.
+     * @minimum 0
+     */
+  nativePages?: number;
+  /**
+     * PDF pages whose text came from OCR.
+     * @minimum 0
+     */
+  ocrPages?: number;
+  /**
+     * Downloaded PDF size in bytes.
+     * @minimum 0
+     */
+  pdfSizeBytes?: number;
 }

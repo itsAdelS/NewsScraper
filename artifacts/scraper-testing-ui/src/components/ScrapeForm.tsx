@@ -32,7 +32,7 @@ export function ScrapeForm({ onSubmit, isPending }: { onSubmit: (url: string, ro
           <Input
             value={url}
             onChange={(e) => { setUrl(e.target.value); setError(''); }}
-            placeholder="https://example.com/payer-policy"
+            placeholder="https://example.com/payer-policy-or-document.pdf"
             className="pl-11 h-12 text-base w-full shadow-sm"
             disabled={isPending}
             data-testid="input-url"
