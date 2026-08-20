@@ -12,11 +12,18 @@ Playwright's pre-compiled Chromium binary (`chromium_headless_shell`) is an FHS 
 
 ## How to Apply
 1. Install the Nix packages via `installSystemDependencies(["mesa", "systemd"])` (or more precisely `mesa` installs `mesa-libgbm`; `systemd` installs `systemd-minimal`).
-2. Set `LD_LIBRARY_PATH` in the server dev script using shell globs to resolve the Nix store paths without hardcoding hashes:
+2. Set `LD_LIBRARY_PATH` in the server dev script by deriving the Mesa and systemd library directories from the matching package entries already on `PATH`:
    ```
-   for d in /nix/store/*-mesa-libgbm-*/lib; do export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; break; done
-   for d in /nix/store/*-systemd-minimal-*/lib; do export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; break; done
+    for p in ${PATH//:/ }; do
+      case "$p" in
+        *-mesa-*/bin) candidate="${p%/bin}/lib"; [[ -f "$candidate/libgbm.so.1" ]] && MESA_LIB_DIR="$candidate" ;;
+        *-systemd-*/bin) candidate="${p%/bin}/lib"; [[ -f "$candidate/libudev.so.1" ]] && SYSTEMD_LIB_DIR="$candidate" ;;
+      esac
+    done
    ```
+   Do not search `/nix/store` with sequential wildcard globs during process startup.
+   
+   **Why:** In this environment, a second broad `/nix/store/*` expansion can stall the launcher before Node is executed, causing artifact workflow port timeouts. `PATH` already contains the required package roots and has no hash coupling.
 3. Do NOT use the `electronplayer-*-fhs/usr/lib64/` path — it contains an older glibc that breaks `/bin/sh`.
 4. Add `playwright install chromium` as a `postinstall` script in package.json so the binary is re-downloaded after any `pnpm install`.
 

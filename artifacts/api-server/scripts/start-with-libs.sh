@@ -14,15 +14,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PLAYWRIGHT_BROWSERS_PATH="$SCRIPT_DIR/../.playwright-browsers"
 
 MESA_LIB_DIR=""
-for d in /nix/store/*-mesa-libgbm-*/lib; do
-  MESA_LIB_DIR="$d"
-  break
-done
-
 SYSTEMD_LIB_DIR=""
-for d in /nix/store/*-systemd-minimal-*/lib; do
-  SYSTEMD_LIB_DIR="$d"
-  break
+# The required Mesa and systemd packages are already present on PATH. Resolve
+# their library directories from those entries rather than globbing /nix/store:
+# whole-store wildcard expansion can stall the API launcher in this environment.
+for p in ${PATH//:/ }; do
+  case "$p" in
+    *-mesa-*/bin)
+      candidate="${p%/bin}/lib"
+      if [[ -f "$candidate/libgbm.so.1" ]]; then
+        MESA_LIB_DIR="$candidate"
+      fi
+      ;;
+    *-systemd-*/bin)
+      candidate="${p%/bin}/lib"
+      if [[ -f "$candidate/libudev.so.1" ]]; then
+        SYSTEMD_LIB_DIR="$candidate"
+      fi
+      ;;
+  esac
+  if [[ -n "$MESA_LIB_DIR" && -n "$SYSTEMD_LIB_DIR" ]]; then
+    break
+  fi
 done
 
 for d in "$MESA_LIB_DIR" "$SYSTEMD_LIB_DIR"; do
