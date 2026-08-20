@@ -148,6 +148,42 @@ export interface ScrapeResponse {
   pdfSizeBytes?: number;
 }
 
+export interface DiscoveryRequest {
+  /** Landing page URL to inspect. */
+  url: string;
+  /** Full or abbreviated reporting month. Omit with targetYear to use the previous calendar month. */
+  targetMonth?: string;
+  /**
+     * Four-digit reporting year. Required when targetMonth is supplied.
+     * @pattern ^\d{4}$
+     */
+  targetYear?: string;
+}
+
+export interface DiscoveryArticle {
+  title: string;
+  /** Visible article date or the matching month/year section label. */
+  Date: string;
+  URL: string;
+}
+
+export interface DiscoveryDiagnostics {
+  linksFound: number;
+  linksMatched: number;
+  pageRendered: boolean;
+  errors: string[];
+}
+
+export interface DiscoveryResponse {
+  PayerName: string;
+  Landingpagetitle: string;
+  Targetmonth: string;
+  TargetYear: string;
+  Articlecount: number;
+  Articles: DiscoveryArticle[];
+  diagnostics: DiscoveryDiagnostics;
+}
+
 export interface ErrorResponse {
   success: boolean;
   error: string;

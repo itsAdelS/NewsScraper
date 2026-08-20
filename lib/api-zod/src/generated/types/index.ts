@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './discoveryArticle';
+export * from './discoveryDiagnostics';
+export * from './discoveryRequest';
+export * from './discoveryResponse';
 export * from './errorResponse';
 export * from './healthStatus';
 export * from './payerNewsHealthStatus';

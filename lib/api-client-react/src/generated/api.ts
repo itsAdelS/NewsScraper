@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  DiscoveryRequest,
+  DiscoveryResponse,
   ErrorResponse,
   HealthStatus,
   PayerNewsHealthStatus,
@@ -280,5 +282,77 @@ export const useScrape = <TError = ErrorType<ScrapeResponse | ErrorResponse>,
         TContext
       > => {
       return useMutation(getScrapeMutationOptions(options));
+    }
+
+export const getDiscoverArticlesUrl = () => {
+
+
+
+
+  return `/api/scrape/discovery`
+}
+
+/**
+ * Opens a payer landing page with SSRF-safe Playwright rendering, then deterministically collects article, update, news, bulletin, and PDF links associated with the requested reporting month. When the target month and year are omitted, the previous calendar month is used.
+ * @summary Discover monthly payer articles
+ */
+export const discoverArticles = async (discoveryRequest: DiscoveryRequest, options?: Parameters<typeof customFetch>[1]): Promise<DiscoveryResponse> => {
+
+  return customFetch<DiscoveryResponse>(getDiscoverArticlesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(discoveryRequest)
+  }
+);}
+
+
+
+
+
+export const getDiscoverArticlesMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discoverArticles>>, TError,{data: BodyType<DiscoveryRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof discoverArticles>>, TError,{data: BodyType<DiscoveryRequest>}, TContext> => {
+
+const mutationKey = ['discoverArticles'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof discoverArticles>>, {data: BodyType<DiscoveryRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  discoverArticles(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DiscoverArticlesMutationResult = NonNullable<Awaited<ReturnType<typeof discoverArticles>>>
+    export type DiscoverArticlesMutationBody = BodyType<DiscoveryRequest>
+    export type DiscoverArticlesMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Discover monthly payer articles
+ */
+export const useDiscoverArticles = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discoverArticles>>, TError,{data: BodyType<DiscoveryRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof discoverArticles>>,
+        TError,
+        {data: BodyType<DiscoveryRequest>},
+        TContext
+      > => {
+      return useMutation(getDiscoverArticlesMutationOptions(options));
     }
 

@@ -83,3 +83,36 @@ export const ScrapeResponse = zod.object({
 }).describe('Returned for every POST \/api\/scrape call — both success and failure. Always JSON, never HTML.\n')
 
 
+/**
+ * Opens a payer landing page with SSRF-safe Playwright rendering, then deterministically collects article, update, news, bulletin, and PDF links associated with the requested reporting month. When the target month and year are omitted, the previous calendar month is used.
+ * @summary Discover monthly payer articles
+ */
+export const discoverArticlesBodyTargetYearRegExp = new RegExp('^\\d{4}$');
+
+
+export const DiscoverArticlesBody = zod.object({
+  "url": zod.url().describe('Landing page URL to inspect.'),
+  "targetMonth": zod.string().optional().describe('Full or abbreviated reporting month. Omit with targetYear to use the previous calendar month.'),
+  "targetYear": zod.string().regex(discoverArticlesBodyTargetYearRegExp).optional().describe('Four-digit reporting year. Required when targetMonth is supplied.')
+})
+
+export const DiscoverArticlesResponse = zod.object({
+  "PayerName": zod.string(),
+  "Landingpagetitle": zod.string(),
+  "Targetmonth": zod.string(),
+  "TargetYear": zod.string(),
+  "Articlecount": zod.int(),
+  "Articles": zod.array(zod.object({
+  "title": zod.string(),
+  "Date": zod.string().describe('Visible article date or the matching month\/year section label.'),
+  "URL": zod.url()
+})),
+  "diagnostics": zod.object({
+  "linksFound": zod.int(),
+  "linksMatched": zod.int(),
+  "pageRendered": zod.boolean(),
+  "errors": zod.array(zod.string())
+})
+})
+
+

@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: scrape
     description: Web scraping operations
+  - name: discovery
+    description: Monthly payer article discovery operations
 paths:
   /healthz:
     get:
@@ -118,6 +120,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScrapeResponse"
+
+  /scrape/discovery:
+    post:
+      operationId: discoverArticles
+      tags: [discovery]
+      summary: Discover monthly payer articles
+      description: >
+        Opens a payer landing page with SSRF-safe Playwright rendering, then
+        deterministically collects article, update, news, bulletin, and PDF
+        links associated with the requested reporting month. When the target
+        month and year are omitted, the previous calendar month is used.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoveryRequest"
+      responses:
+        "200":
+          description: Discovery completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryResponse"
+        "400":
+          description: Invalid URL or reporting period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: URL targets a private/internal network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Browser pool is full or scraping is paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "504":
+          description: Landing page rendering timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   securitySchemes:
@@ -296,6 +354,88 @@ components:
         - statusCode
         - durationMs
         - truncated
+
+    DiscoveryRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Landing page URL to inspect.
+        targetMonth:
+          type: string
+          description: Full or abbreviated reporting month. Omit with targetYear to use the previous calendar month.
+          example: August
+        targetYear:
+          type: string
+          pattern: '^\d{4}$'
+          description: Four-digit reporting year. Required when targetMonth is supplied.
+          example: "2026"
+      required:
+        - url
+
+    DiscoveryArticle:
+      type: object
+      properties:
+        title:
+          type: string
+        Date:
+          type: string
+          description: Visible article date or the matching month/year section label.
+        URL:
+          type: string
+          format: uri
+      required:
+        - title
+        - Date
+        - URL
+
+    DiscoveryDiagnostics:
+      type: object
+      properties:
+        linksFound:
+          type: integer
+        linksMatched:
+          type: integer
+        pageRendered:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+        - linksFound
+        - linksMatched
+        - pageRendered
+        - errors
+
+    DiscoveryResponse:
+      type: object
+      properties:
+        PayerName:
+          type: string
+        Landingpagetitle:
+          type: string
+        Targetmonth:
+          type: string
+        TargetYear:
+          type: string
+        Articlecount:
+          type: integer
+        Articles:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveryArticle"
+        diagnostics:
+          $ref: "#/components/schemas/DiscoveryDiagnostics"
+      required:
+        - PayerName
+        - Landingpagetitle
+        - Targetmonth
+        - TargetYear
+        - Articlecount
+        - Articles
+        - diagnostics
 
     ErrorResponse:
       type: object

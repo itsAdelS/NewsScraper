@@ -13,14 +13,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # directory is gitignored and excluded from the Repl layer.
 export PLAYWRIGHT_BROWSERS_PATH="$SCRIPT_DIR/../.playwright-browsers"
 
+MESA_LIB_DIR=""
 for d in /nix/store/*-mesa-libgbm-*/lib; do
-  export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  MESA_LIB_DIR="$d"
   break
 done
 
+SYSTEMD_LIB_DIR=""
 for d in /nix/store/*-systemd-minimal-*/lib; do
-  export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  SYSTEMD_LIB_DIR="$d"
   break
+done
+
+for d in "$MESA_LIB_DIR" "$SYSTEMD_LIB_DIR"; do
+  if [[ -n "$d" ]]; then
+    export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
 done
 
 exec node --enable-source-maps "$SCRIPT_DIR/../dist/index.mjs"
