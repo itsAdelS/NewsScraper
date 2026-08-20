@@ -1,0 +1,99 @@
+Discovery Rules
+The endpoint should:
+Supported Article Types
+Consider these valid article entries:
+Medical policy updates
+Provider alerts
+Prior authorization updates
+News articles
+Provider bulletins
+Announcements
+Network updates
+Reimbursement updates
+PDF bulletins
+Policy update pages
+Link Collection
+Collect hyperlinks from:
+Anchor tags
+Article cards
+News listings
+Bulletin listings
+Update sections
+Resource lists
+URL Handling
+Convert relative URLs into absolute URLs.
+Preserve discovered URLs exactly.
+Remove duplicate URLs.
+Ignore mailto links.
+Ignore javascript links.
+Ignore social media links.
+Ignore site navigation links.
+Filters
+Exclude:
+Archive pages
+Category pages
+Search pages
+Contact pages
+Login pages
+Home pages
+Pagination controls
+Date Filtering Logic
+Determine article dates from:
+Visible date text
+Nearby sibling elements
+Article metadata
+Listing containers
+Include an article if:
+Its date falls within the specified target month and year.
+If a page contains a section explicitly labeled with the target month/year:
+Example:
+Plain Text
+1
+August 2026
+2
+-----------
+3
+Medical Policy Updates
+4
+Prior Authorization Updates
+Show more lines
+then treat all links within that section as matching even if the individual links do not contain dates.
+Playwright Requirements
+The endpoint should:
+Use Playwright.
+Wait for page content to load.
+Support JavaScript-rendered content.
+Scroll the page if necessary.
+Collect links after rendering is complete.
+Timeout gracefully.
+Diagnostics
+Include:
+JSON
+1
+{
+2
+"diagnostics": {
+3
+"linksFound": 0,
+4
+"linksMatched": 0,
+5
+"pageRendered": true,
+6
+"errors": []
+7
+}
+8
+}
+Show more lines
+This helps troubleshooting payer sites that fail discovery.
+Special Requirement
+Do NOT use AI or LLM reasoning for URL extraction.
+Use deterministic HTML parsing wherever possible.
+Playwright should gather the rendered DOM.
+Extraction should be based on:
+href values
+DOM structure
+date patterns
+The endpoint should only use heuristics when necessary to associate dates with nearby links.
+Goal: return reliable article URLs across payer sites such as Anthem, BCBS plans, CareSource, Molina, Aetna, UHC, and Humana without depending on generative AI.
