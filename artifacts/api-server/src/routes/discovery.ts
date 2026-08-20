@@ -54,7 +54,6 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
       queueDepthAtStart: poolAtStart.queued,
       activeContextsAtStart: poolAtStart.active,
       contentPreview: null,
-      discoveryArticles: 0,
     });
     res.status(status).json({ success: false, error, diagnostics, durationMs: Date.now() - startedAt });
   };
@@ -101,7 +100,6 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
       queueDepthAtStart: poolAtStart.queued,
       activeContextsAtStart: poolAtStart.active,
       contentPreview: null,
-      discoveryArticles: articles.length,
     });
 
     const response: DiscoveryResponse = {

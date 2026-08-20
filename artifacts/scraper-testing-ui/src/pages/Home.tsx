@@ -7,13 +7,13 @@ import { useScrape, useDiscoverArticles, ScrapeRequestRoute } from '@workspace/a
 import { useState } from 'react';
 
 export default function Home() {
-  const { mutate, isPending, data, error } = useScrape();
+  const core = useScrape();
   const discovery = useDiscoverArticles();
   const [mode, setMode] = useState<ScrapeMode>('core');
-  const activePending = mode === 'core' ? isPending : discovery.isPending;
+  const activePending = mode === 'core' ? core.isPending : discovery.isPending;
 
   const handleScrape = (url: string, route: ScrapeRequestRoute, targetMonth?: string, targetYear?: string) => {
-    mutate({
+    core.mutate({
       data: { url, route: route === 'generic' ? undefined : route }
     });
   };
@@ -50,15 +50,15 @@ export default function Home() {
         <div className="bg-card border rounded-xl p-6 md:p-8 shadow-sm mb-8">
           <ScrapeForm onSubmit={handleSubmit} isPending={activePending} mode={mode} onModeChange={(next) => {
             setMode(next);
-            mutate.reset();
+            core.reset();
             discovery.reset();
           }} />
         </div>
         
         {activePending && <LoadingState />}
         
-        {!activePending && mode === 'core' && (data || error) && (
-          <ResultsPanel data={data} error={error} />
+        {!activePending && mode === 'core' && (core.data || core.error) && (
+          <ResultsPanel data={core.data} error={core.error} />
         )}
         {!activePending && mode === 'discovery' && (discovery.data || discovery.error) && (
           <ResultsPanel discoveryData={discovery.data} error={discovery.error} />

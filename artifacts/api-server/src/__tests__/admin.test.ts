@@ -226,16 +226,16 @@ describe("activity endpoint", () => {
     expect(res.body.bucketSecs).toBe(60);
   });
 
-  it("returns PDF activity counts in the activity response", async () => {
+  it("returns PDF and discovery activity counts in the activity response", async () => {
     const { getActivityBuckets } = await import("../lib/request-log.js");
     vi.mocked(getActivityBuckets).mockResolvedValueOnce([
-      { ts: 100, static: 2, playwright: 1, pdf: 3 },
+      { ts: 100, static: 2, playwright: 1, pdf: 3, discovery: 4 },
     ]);
     const res = await request(app)
       .get("/api/admin/activity")
       .set("Authorization", `Bearer ${API_KEY}`);
     expect(res.status).toBe(200);
-    expect(res.body.buckets[0]).toEqual({ ts: 100, static: 2, playwright: 1, pdf: 3 });
+    expect(res.body.buckets[0]).toEqual({ ts: 100, static: 2, playwright: 1, pdf: 3, discovery: 4 });
   });
 
   it("includes PDF presentation labels in the admin console", async () => {
@@ -244,6 +244,8 @@ describe("activity endpoint", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain(">PDF</span>");
     expect(res.text).toContain("background:#f85149");
+    expect(res.text).toContain(">Discovery</span>");
+    expect(res.text).toContain("background:#a855f7");
   });
 
   it("degrades gracefully and returns 200 with empty buckets when getActivityBuckets throws", async () => {

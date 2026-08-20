@@ -1,4 +1,4 @@
-import type { ScrapeResponse } from '@workspace/api-client-react';
+import type { DiscoveryResponse, ScrapeResponse } from '@workspace/api-client-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { CheckCircle2, AlertCircle, Copy, Check, Clock, Globe2, FileText, Activity } from 'lucide-react';
@@ -32,8 +32,64 @@ function getStatusErrorMessage(error: any): string {
   return error?.message ?? "An unexpected error occurred.";
 }
 
-export function ResultsPanel({ data, error }: { data?: ScrapeResponse; error?: any }) {
+function DiscoveryResults({ data, error }: { data?: DiscoveryResponse; error?: any }) {
+  const serverMessage = error?.data?.error;
+  const errorMessage = serverMessage ?? (error ? getStatusErrorMessage(error) : undefined);
+  const diagnostics = data?.diagnostics ?? error?.data?.diagnostics;
+
+  return (
+    <div className="mt-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold tracking-tight">Discovery Result</h3>
+        <Badge variant={!error && data ? 'success' : 'destructive'} className="px-3 py-1.5 text-sm font-medium gap-1.5 rounded-full" data-testid="badge-discovery-status">
+          {!error && data ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {!error && data ? 'Complete' : 'Failed'}
+        </Badge>
+      </div>
+      {data && (
+        <Card className="overflow-hidden shadow-sm">
+          <div className="bg-muted/40 p-5 border-b grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+            <div><p className="text-muted-foreground mb-1">Payer</p><p className="font-medium" data-testid="text-discovery-payer">{data.PayerName || 'Not identified'}</p></div>
+            <div><p className="text-muted-foreground mb-1">Target period</p><p className="font-medium" data-testid="text-discovery-period">{data.Targetmonth} {data.TargetYear}</p></div>
+            <div><p className="text-muted-foreground mb-1">Articles found</p><p className="font-semibold text-lg" data-testid="text-discovery-count">{data.Articlecount}</p></div>
+            <div><p className="text-muted-foreground mb-1">Landing page</p><p className="font-medium truncate" title={data.Landingpagetitle}>{data.Landingpagetitle || 'Untitled'}</p></div>
+          </div>
+          <div className="p-5">
+            <h4 className="font-semibold mb-3">Matching articles</h4>
+            {data.Articles.length ? (
+              <div className="divide-y border rounded-lg">
+                {data.Articles.map((article) => (
+                  <a key={article.URL} href={article.URL} target="_blank" rel="noreferrer" className="block p-4 hover:bg-muted/50 transition-colors">
+                    <p className="font-medium text-blue-600">{article.title}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{article.Date}</p>
+                  </a>
+                ))}
+              </div>
+            ) : <p className="text-muted-foreground text-sm">No article links matched this reporting period.</p>}
+          </div>
+          {diagnostics && (
+            <div className="border-t p-5 bg-muted/20">
+              <h4 className="font-semibold text-sm mb-2">Diagnostics</h4>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <span>Links found: <strong>{diagnostics.linksFound}</strong></span>
+                <span>Links matched: <strong>{diagnostics.linksMatched}</strong></span>
+                <span>Rendered: <strong>{diagnostics.pageRendered ? 'Yes' : 'No'}</strong></span>
+              </div>
+              {diagnostics.errors.length > 0 && <p className="mt-3 text-sm text-destructive">{diagnostics.errors.join(' ')}</p>}
+            </div>
+          )}
+        </Card>
+      )}
+      {errorMessage && <Card className="p-5 border-destructive/20 bg-destructive/5 text-destructive text-sm font-medium" data-testid="text-error-message">{errorMessage}</Card>}
+    </div>
+  );
+}
+
+export function ResultsPanel({ data, discoveryData, error }: { data?: ScrapeResponse; discoveryData?: DiscoveryResponse; error?: any }) {
   const [copied, setCopied] = useState(false);
+  if (discoveryData || error?.data?.diagnostics) {
+    return <DiscoveryResults data={discoveryData} error={error} />;
+  }
 
   // The scraper API always returns a structured ScrapeResponse — even on failure
   // (non-2xx). customFetch throws an ApiError whose .data property carries the

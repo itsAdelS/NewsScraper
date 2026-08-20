@@ -51,8 +51,6 @@ export const scrapeRequestsTable = pgTable(
       .default(0),
     /** Optional short diagnostic preview (first 500 chars of extracted text). */
     contentPreview: text("content_preview"),
-    /** Number of matching article links returned by discovery requests. */
-    discoveryArticles: integer("discovery_articles").notNull().default(0),
   },
   (t) => [
     index("scrape_requests_created_at_idx").on(t.createdAt),

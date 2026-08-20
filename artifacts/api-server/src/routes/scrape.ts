@@ -78,7 +78,6 @@ router.post("/scrape", requireApiKey, async (req, res) => {
     nativePages?: number;
     ocrPages?: number;
     pdfSizeBytes?: number;
-      discoveryArticles?: number;
   }): void => {
     recordScrapeRequest({
       requestId,
@@ -105,7 +104,6 @@ router.post("/scrape", requireApiKey, async (req, res) => {
         config.logContentPreview && opts.preview
           ? opts.preview.slice(0, PREVIEW_MAX_CHARS)
           : null,
-      discoveryArticles: opts.discoveryArticles ?? 0,
     });
   };
 

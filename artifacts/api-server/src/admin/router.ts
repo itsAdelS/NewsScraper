@@ -259,6 +259,7 @@ router.get("/", requireAdminPage, (_req, res) => {
     <span><span style="display:inline-block;width:10px;height:10px;background:var(--green);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Static</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#58a6ff;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Playwright</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:var(--red);border-radius:2px;margin-right:4px;vertical-align:middle"></span>PDF</span>
+     <span><span style="display:inline-block;width:10px;height:10px;background:#a855f7;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Discovery</span>
   </div>
   <div id="activity-tooltip" style="display:none;position:fixed;z-index:100;background:#1a2129;border:1px solid #2b3540;border-radius:8px;padding:10px 14px;font-size:12px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.5)"></div>
 </div>
@@ -297,9 +298,15 @@ router.get("/", requireAdminPage, (_req, res) => {
     <div class="kv"><span>Failed</span><span id="pdf-failed">—</span></div>
     <div class="kv"><span>Average duration</span><span id="pdf-duration">—</span></div>
   </div>
+  <div class="card"><h2>Monthly Discovery (7 days)</h2>
+    <div class="kv"><span>Requests</span><span id="discovery-total">—</span></div>
+    <div class="kv"><span>Successful / failed</span><span id="discovery-result">—</span></div>
+    <div class="kv"><span>Articles matched</span><span id="discovery-articles">—</span></div>
+    <div class="kv"><span>Average duration</span><span id="discovery-duration">—</span></div>
+  </div>
 </div>
 <h2>Recent scrapes</h2>
-<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Document</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content</th></tr></thead>
+<table><thead><tr><th>Time</th><th>Request ID</th><th>Domain</th><th>Route</th><th>Document</th><th>Result</th><th>Scraper</th><th>Duration</th><th>Content / Articles</th></tr></thead>
 <tbody id="recent-body"><tr class="norow"><td colspan="9" class="muted">Loading…</td></tr></tbody></table>
 <p class="footnote">Metrics refresh every 6 seconds. <a data-nav="/requests">Full request history →</a></p>`;
 
@@ -354,6 +361,10 @@ async function refreshStats(){
     document.getElementById('pdf-mixed').textContent = s.mixedPdfExtractions;
     document.getElementById('pdf-failed').textContent = s.pdfFailures;
     document.getElementById('pdf-duration').textContent = fmtDur(s.averagePdfDurationMs);
+    document.getElementById('discovery-total').textContent = s.discoveryRequests;
+    document.getElementById('discovery-result').textContent = s.discoverySuccesses + ' / ' + s.discoveryFailures;
+    document.getElementById('discovery-articles').textContent = s.discoveryArticles;
+    document.getElementById('discovery-duration').textContent = fmtDur(s.averageDiscoveryDurationMs);
   }catch(e){}
 }
 async function refreshRecent(){
@@ -402,7 +413,7 @@ function drawActivity(buckets){
   _activityLayout = { PL, PT, PB, PR, plotW, cssW, n: buckets.length || 1 };
   ctx.fillStyle = '#0f1419';
   ctx.fillRect(0, 0, W, H);
-   const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright + (b.pdf || 0)));
+   const maxVal = Math.max(1, ...buckets.map(b => b.static + b.playwright + (b.pdf || 0) + (b.discovery || 0)));
   ctx.strokeStyle = '#1f2a35';
   ctx.lineWidth = 1;
   for (let i = 1; i <= 4; i++){
@@ -416,15 +427,18 @@ function drawActivity(buckets){
     const x = PL + i * barW + gap / 2;
     const bw = Math.max(1, barW - gap);
      const pdf = b.pdf || 0;
-     const total = b.static + b.playwright + pdf;
+     const discovery = b.discovery || 0;
+     const total = b.static + b.playwright + pdf + discovery;
     if (!total) return;
     const totalH = plotH * (total / maxVal);
      const staticH = plotH * (b.static / maxVal);
      const pwH = plotH * (b.playwright / maxVal);
      const pdfH = plotH * (pdf / maxVal);
+     const discoveryH = plotH * (discovery / maxVal);
      if (staticH > 0.5){ ctx.fillStyle='#3fb950'; ctx.fillRect(x, PT+plotH-staticH, bw, staticH); }
      if (pwH > 0.5){ ctx.fillStyle='#58a6ff'; ctx.fillRect(x, PT+plotH-staticH-pwH, bw, pwH); }
      if (pdfH > 0.5){ ctx.fillStyle='#f85149'; ctx.fillRect(x, PT+plotH-staticH-pwH-pdfH, bw, pdfH); }
+     if (discoveryH > 0.5){ ctx.fillStyle='#a855f7'; ctx.fillRect(x, PT+plotH-staticH-pwH-pdfH-discoveryH, bw, discoveryH); }
   });
   ctx.fillStyle = '#8b98a5';
   ctx.font = '10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
@@ -453,15 +467,17 @@ function initActivityTooltip(){
     if (idx < 0 || idx >= _activityBuckets.length) { tip.style.display='none'; return; }
     const b = _activityBuckets[idx];
      const pdf = b.pdf || 0;
-     const total = b.static + b.playwright + pdf;
+     const discovery = b.discovery || 0;
+     const total = b.static + b.playwright + pdf + discovery;
     const timeLabel = b.ts ? fmtBucketTime(b.ts * 1000) : ('Bucket ' + (idx+1));
     tip.innerHTML =
       '<div style="color:#8b98a5;margin-bottom:6px;font-size:11px">' + timeLabel + '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#3fb950;border-radius:2px"></span>Static<span style="margin-left:auto;font-weight:600">' + b.static + '</span></div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#58a6ff;border-radius:2px"></span>Playwright<span style="margin-left:auto;font-weight:600">' + b.playwright + '</span></div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#f85149;border-radius:2px"></span>PDF<span style="margin-left:auto;font-weight:600">' + pdf + '</span></div>' +
+       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;background:#a855f7;border-radius:2px"></span>Discovery<span style="margin-left:auto;font-weight:600">' + discovery + '</span></div>' +
       '<div style="border-top:1px solid #2b3540;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between"><span style="color:#8b98a5">Total</span><span style="font-weight:600">' + total + '</span></div>';
-     const tipW = 190, tipH = 125;
+     const tipW = 190, tipH = 148;
     let tx = e.clientX + 12;
     let ty = e.clientY - tipH - 8;
     if (tx + tipW > window.innerWidth - 8) tx = e.clientX - tipW - 12;
@@ -496,7 +512,7 @@ function requestsPage(errorsOnly: boolean): { body: string; script: string } {
       ? ""
       : `<select id="f-result"><option value="">All results</option><option value="success">Success</option><option value="failure">Failure</option></select>`
   }
-  <select id="f-scraper"><option value="">All scrapers</option><option value="static">Static</option><option value="playwright">Playwright</option><option value="pdf-native">PDF Native</option><option value="pdf-ocr">PDF OCR</option><option value="pdf-mixed">PDF Mixed</option></select>
+  <select id="f-scraper"><option value="">All scrapers</option><option value="static">Static</option><option value="playwright">Playwright</option><option value="pdf-native">PDF Native</option><option value="pdf-ocr">PDF OCR</option><option value="pdf-mixed">PDF Mixed</option><option value="discovery">Monthly Discovery</option></select>
   <input id="f-domain" placeholder="Domain" style="width:150px">
   <input id="f-route" placeholder="Route" style="width:110px">
   <button id="f-apply" class="primary">Apply</button>

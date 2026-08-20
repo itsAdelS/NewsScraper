@@ -3,10 +3,16 @@ import express from "express";
 import request from "supertest";
 
 const mockedRender = vi.hoisted(() => vi.fn());
+const mockedRecordRequest = vi.hoisted(() => vi.fn());
 
 vi.mock("../scrapers/discovery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../scrapers/discovery.js")>();
   return { ...actual, renderDiscoveryLandingPage: mockedRender };
+});
+
+vi.mock("../lib/request-log.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/request-log.js")>();
+  return { ...actual, recordScrapeRequest: mockedRecordRequest };
 });
 
 import discoveryRouter from "../routes/discovery.js";
@@ -136,6 +142,7 @@ describe("POST /api/scrape/discovery", () => {
   beforeEach(() => {
     process.env.PAYERNEWS_API_KEY = API_KEY;
     mockedRender.mockReset();
+    mockedRecordRequest.mockReset();
     mockedRender.mockResolvedValue({
       finalUrl: "https://payer.example/updates",
       title: "Payer updates",
@@ -184,6 +191,14 @@ describe("POST /api/scrape/discovery", () => {
       ],
       diagnostics: { linksFound: 1, linksMatched: 1, pageRendered: true, errors: [] },
     });
+    expect(mockedRecordRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: "discovery",
+        scraperUsed: "discovery",
+        success: true,
+        contentLength: 1,
+      }),
+    );
   });
 
   it("returns a JSON validation error for incomplete target periods", async () => {
@@ -206,5 +221,14 @@ describe("POST /api/scrape/discovery", () => {
       .send({ url: "https://payer.example/updates", targetMonth: "August", targetYear: "2026" });
     expect(res.status).toBe(504);
     expect(res.body).toMatchObject({ success: false, diagnostics: { pageRendered: false } });
+    expect(mockedRecordRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: "discovery",
+        scraperUsed: "discovery",
+        success: false,
+        httpStatus: 504,
+        contentLength: 0,
+      }),
+    );
   });
 });

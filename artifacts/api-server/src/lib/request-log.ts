@@ -320,7 +320,7 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
         averagePdfDurationMs: sql<number | null>`AVG(CASE WHEN ${t.documentType} = 'pdf' THEN ${t.durationMs} END)`,
         discoveryRequests: count(sql`CASE WHEN ${t.scraperUsed} = 'discovery' THEN 1 END`),
         discoverySuccesses: count(sql`CASE WHEN ${t.scraperUsed} = 'discovery' AND ${t.success} THEN 1 END`),
-        discoveryArticles: sql<number>`COALESCE(SUM(CASE WHEN ${t.scraperUsed} = 'discovery' THEN ${t.discoveryArticles} ELSE 0 END), 0)`,
+        discoveryArticles: sql<number>`COALESCE(SUM(CASE WHEN ${t.scraperUsed} = 'discovery' THEN ${t.contentLength} ELSE 0 END), 0)`,
         averageDiscoveryDurationMs: sql<number | null>`AVG(CASE WHEN ${t.scraperUsed} = 'discovery' THEN ${t.durationMs} END)`,
       })
       .from(t)
