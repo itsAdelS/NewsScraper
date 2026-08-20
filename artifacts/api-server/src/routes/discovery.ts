@@ -1,7 +1,12 @@
 import { Router, type IRouter } from "express";
 import { config } from "../config.js";
 import { getOpsState } from "../lib/ops-state.js";
-import { generateRequestId } from "../lib/request-log.js";
+import {
+  generateRequestId,
+  domainOf,
+  recordScrapeRequest,
+} from "../lib/request-log.js";
+import { browserPool } from "../scrapers/browser-pool.js";
 import { requireApiKey } from "../middleware/auth.js";
 import {
   collectDiscoveryArticles,
@@ -20,6 +25,8 @@ const router: IRouter = Router();
 
 router.post("/scrape/discovery", requireApiKey, async (req, res) => {
   const startedAt = Date.now();
+  const requestId = generateRequestId();
+  const poolAtStart = browserPool.stats;
   const body = req.body as Partial<DiscoveryRequestBody>;
   const diagnostics = {
     linksFound: 0,
@@ -30,6 +37,25 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
 
   const fail = (status: number, error: string) => {
     diagnostics.errors.push(error);
+    recordScrapeRequest({
+      requestId,
+      url: typeof body.url === "string" ? body.url : "",
+      finalUrl: "",
+      domain: typeof body.url === "string" ? domainOf(body.url) : "",
+      route: "discovery",
+      scraperUsed: "discovery",
+      documentType: "html",
+      httpStatus: status,
+      success: false,
+      contentLength: 0,
+      durationMs: Date.now() - startedAt,
+      playwrightFallback: false,
+      errorMessage: error,
+      queueDepthAtStart: poolAtStart.queued,
+      activeContextsAtStart: poolAtStart.active,
+      contentPreview: null,
+      discoveryArticles: 0,
+    });
     res.status(status).json({ success: false, error, diagnostics, durationMs: Date.now() - startedAt });
   };
 
@@ -58,6 +84,25 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
     diagnostics.linksFound = page.candidates.length;
     const articles = collectDiscoveryArticles(page.candidates, target);
     diagnostics.linksMatched = articles.length;
+    recordScrapeRequest({
+      requestId,
+      url: body.url,
+      finalUrl: page.finalUrl,
+      domain: domainOf(body.url),
+      route: "discovery",
+      scraperUsed: "discovery",
+      documentType: "html",
+      httpStatus: 200,
+      success: true,
+      contentLength: articles.length,
+      durationMs: Date.now() - startedAt,
+      playwrightFallback: false,
+      errorMessage: null,
+      queueDepthAtStart: poolAtStart.queued,
+      activeContextsAtStart: poolAtStart.active,
+      contentPreview: null,
+      discoveryArticles: articles.length,
+    });
 
     const response: DiscoveryResponse = {
       PayerName: derivePayerName(page),

@@ -27,7 +27,7 @@ export const scrapeRequestsTable = pgTable(
     finalUrl: text("final_url").notNull().default(""),
     domain: text("domain").notNull().default(""),
     route: text("route").notNull().default(""),
-    /** "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed" | "" */
+    /** "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed" | "discovery" | "" */
     scraperUsed: text("scraper_used").notNull().default(""),
     /** Resource type processed by the scrape pipeline. */
     documentType: text("document_type").notNull().default("html"),
@@ -51,6 +51,8 @@ export const scrapeRequestsTable = pgTable(
       .default(0),
     /** Optional short diagnostic preview (first 500 chars of extracted text). */
     contentPreview: text("content_preview"),
+    /** Number of matching article links returned by discovery requests. */
+    discoveryArticles: integer("discovery_articles").notNull().default(0),
   },
   (t) => [
     index("scrape_requests_created_at_idx").on(t.createdAt),

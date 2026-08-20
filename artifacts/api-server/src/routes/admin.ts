@@ -138,6 +138,7 @@ router.get("/admin/requests", requireAdminApi, async (req, res) => {
       scraper === "pdf-native" ||
       scraper === "pdf-ocr" ||
       scraper === "pdf-mixed"
+      || scraper === "discovery"
         ? scraper
         : undefined,
     domain: str(q.domain),

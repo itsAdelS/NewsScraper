@@ -1,17 +1,28 @@
 import { ApiKeyInput } from '@/components/ApiKeyInput';
 import { HealthIndicator } from '@/components/HealthIndicator';
-import { ScrapeForm } from '@/components/ScrapeForm';
+import { ScrapeForm, ScrapeMode } from '@/components/ScrapeForm';
 import { ResultsPanel } from '@/components/ResultsPanel';
 import { LoadingState } from '@/components/LoadingState';
-import { useScrape, ScrapeRequestRoute } from '@workspace/api-client-react';
+import { useScrape, useDiscoverArticles, ScrapeRequestRoute } from '@workspace/api-client-react';
+import { useState } from 'react';
 
 export default function Home() {
   const { mutate, isPending, data, error } = useScrape();
+  const discovery = useDiscoverArticles();
+  const [mode, setMode] = useState<ScrapeMode>('core');
+  const activePending = mode === 'core' ? isPending : discovery.isPending;
 
-  const handleScrape = (url: string, route: ScrapeRequestRoute) => {
+  const handleScrape = (url: string, route: ScrapeRequestRoute, targetMonth?: string, targetYear?: string) => {
     mutate({
       data: { url, route: route === 'generic' ? undefined : route }
     });
+  };
+  const handleSubmit = (url: string, route: ScrapeRequestRoute, targetMonth?: string, targetYear?: string) => {
+    if (mode === 'core') {
+      handleScrape(url, route);
+    } else {
+      discovery.mutate({ data: { url, ...(targetMonth ? { targetMonth } : {}), ...(targetYear ? { targetYear } : {}) } });
+    }
   };
 
   return (
@@ -37,13 +48,20 @@ export default function Home() {
         </div>
         
         <div className="bg-card border rounded-xl p-6 md:p-8 shadow-sm mb-8">
-          <ScrapeForm onSubmit={handleScrape} isPending={isPending} />
+          <ScrapeForm onSubmit={handleSubmit} isPending={activePending} mode={mode} onModeChange={(next) => {
+            setMode(next);
+            mutate.reset();
+            discovery.reset();
+          }} />
         </div>
         
-        {isPending && <LoadingState />}
+        {activePending && <LoadingState />}
         
-        {!isPending && (data || error) && (
+        {!activePending && mode === 'core' && (data || error) && (
           <ResultsPanel data={data} error={error} />
+        )}
+        {!activePending && mode === 'discovery' && (discovery.data || discovery.error) && (
+          <ResultsPanel discoveryData={discovery.data} error={discovery.error} />
         )}
       </main>
     </div>

@@ -131,7 +131,7 @@ export function recordScrapeRequest(row: InsertScrapeRequest): void {
 export interface RequestQuery {
   search?: string; // matches request ID, URL, or domain
   result?: "success" | "failure";
-  scraper?: "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed";
+  scraper?: "static" | "playwright" | "pdf-native" | "pdf-ocr" | "pdf-mixed" | "discovery";
   domain?: string;
   route?: string;
   errorsOnly?: boolean;
@@ -232,6 +232,11 @@ export interface ScrapeStats {
   mixedPdfExtractions: number;
   pdfFailures: number;
   averagePdfDurationMs: number;
+  discoveryRequests: number;
+  discoverySuccesses: number;
+  discoveryFailures: number;
+  discoveryArticles: number;
+  averageDiscoveryDurationMs: number;
 }
 
 const EMPTY_STATS: ScrapeStats = {
@@ -253,6 +258,11 @@ const EMPTY_STATS: ScrapeStats = {
   mixedPdfExtractions: 0,
   pdfFailures: 0,
   averagePdfDurationMs: 0,
+  discoveryRequests: 0,
+  discoverySuccesses: 0,
+  discoveryFailures: 0,
+  discoveryArticles: 0,
+  averageDiscoveryDurationMs: 0,
 };
 
 export async function getScrapeStats(): Promise<ScrapeStats> {
@@ -308,6 +318,10 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
           sql`CASE WHEN ${t.documentType} = 'pdf' AND NOT ${t.success} THEN 1 END`,
         ),
         averagePdfDurationMs: sql<number | null>`AVG(CASE WHEN ${t.documentType} = 'pdf' THEN ${t.durationMs} END)`,
+        discoveryRequests: count(sql`CASE WHEN ${t.scraperUsed} = 'discovery' THEN 1 END`),
+        discoverySuccesses: count(sql`CASE WHEN ${t.scraperUsed} = 'discovery' AND ${t.success} THEN 1 END`),
+        discoveryArticles: sql<number>`COALESCE(SUM(CASE WHEN ${t.scraperUsed} = 'discovery' THEN ${t.discoveryArticles} ELSE 0 END), 0)`,
+        averageDiscoveryDurationMs: sql<number | null>`AVG(CASE WHEN ${t.scraperUsed} = 'discovery' THEN ${t.durationMs} END)`,
       })
       .from(t)
       .where(gte(t.createdAt, weekAgo)),
@@ -336,6 +350,11 @@ export async function getScrapeStats(): Promise<ScrapeStats> {
     mixedPdfExtractions: w.mixedPdfExtractions,
     pdfFailures: w.pdfFailures,
     averagePdfDurationMs: Math.round(Number(w.averagePdfDurationMs ?? 0)),
+    discoveryRequests: w.discoveryRequests,
+    discoverySuccesses: w.discoverySuccesses,
+    discoveryFailures: w.discoveryRequests - w.discoverySuccesses,
+    discoveryArticles: Number(w.discoveryArticles ?? 0),
+    averageDiscoveryDurationMs: Math.round(Number(w.averageDiscoveryDurationMs ?? 0)),
   };
 }
 
@@ -346,6 +365,7 @@ export interface ActivityBucket {
   static: number;
   playwright: number;
   pdf: number;
+  discovery: number;
 }
 
 /**
@@ -368,7 +388,7 @@ export async function getActivityBuckets(
   const map = new Map<number, ActivityBucket>();
   for (let i = 0; i < totalBuckets; i++) {
     const ts = nowBucket - (totalBuckets - 1 - i) * bucketSecs;
-    map.set(ts, { ts, static: 0, playwright: 0, pdf: 0 });
+    map.set(ts, { ts, static: 0, playwright: 0, pdf: 0, discovery: 0 });
   }
 
   const m = await getDbModule();
@@ -386,6 +406,7 @@ export async function getActivityBuckets(
         staticCount: count(sql`CASE WHEN ${t.scraperUsed} = 'static' THEN 1 END`),
         playwrightCount: count(sql`CASE WHEN ${t.scraperUsed} = 'playwright' THEN 1 END`),
         pdfCount: count(sql`CASE WHEN ${t.documentType} = 'pdf' THEN 1 END`),
+        discoveryCount: count(sql`CASE WHEN ${t.scraperUsed} = 'discovery' THEN 1 END`),
       })
       .from(t)
       .where(gte(t.createdAt, since))
@@ -400,6 +421,7 @@ export async function getActivityBuckets(
           static: Number(row.staticCount),
           playwright: Number(row.playwrightCount),
           pdf: Number(row.pdfCount),
+          discovery: Number(row.discoveryCount),
         });
       }
     }
