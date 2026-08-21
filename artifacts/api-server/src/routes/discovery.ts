@@ -81,7 +81,11 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
     const page = await renderDiscoveryLandingPage(body.url, generateRequestId());
     diagnostics.pageRendered = true;
     diagnostics.linksFound = page.candidates.length;
-    const articles = collectDiscoveryArticles(page.candidates, target);
+    const articles = collectDiscoveryArticles(
+      page.candidates,
+      target,
+      `${page.title} ${page.finalUrl}`,
+    );
     diagnostics.linksMatched = articles.length;
     recordScrapeRequest({
       requestId,

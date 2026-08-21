@@ -381,7 +381,9 @@ components:
           type: string
         Date:
           type: string
-          description: Visible article date or the matching month/year section label.
+          description: >
+            Matching visible date, supported date in the destination URL path,
+            or the matching month/year newsletter issue label.
         url:
           type: string
           format: uri

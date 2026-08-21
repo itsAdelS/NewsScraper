@@ -169,6 +169,64 @@ describe("discovery link collection", () => {
       },
     ]);
   });
+
+  it("matches dates embedded in article and PDF destination paths", () => {
+    const july = collectDiscoveryArticles(
+      [
+        {
+          href: "https://www.bcbsil.com/news/2026/7-15-26-provider-update",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://www.bcbsil.com/news/2026/7-7-2026-policy-update",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://www.bcbsil.com/files/blue-review-20260701.pdf",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      { monthIndex: 6, month: "July", year: 2026 },
+    );
+
+    expect(july).toHaveLength(3);
+    expect(july.map(({ Date }) => Date)).toEqual(["7-15-26", "7-7-2026", "20260701"]);
+  });
+
+  it("uses the issue month for a newsletter issue link without broadening filtering", () => {
+    const august = collectDiscoveryArticles(
+      [
+        {
+          href: "https://www.bcbsil.com/newsroom/blue-review",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://www.bcbsil.com/contact",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      target,
+      "Blue Review August 2026",
+    );
+
+    expect(august).toEqual([
+      {
+        title: "Read More",
+        Date: "August 2026",
+        url: "https://www.bcbsil.com/newsroom/blue-review",
+      },
+    ]);
+  });
 });
 
 describe("POST /api/scrape/discovery", () => {

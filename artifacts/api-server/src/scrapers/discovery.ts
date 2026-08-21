@@ -192,7 +192,27 @@ function dateForTarget(text: string, target: DiscoveryTarget): string | null {
     `\\b${numericMonth}[/-]\\d{1,2}[/-]${numericYear}\\b|\\b\\d{1,2}[/-]${numericMonth}[/-]${numericYear}\\b`,
   );
   const numericMatch = normalized.match(numeric);
-  return numericMatch?.[0] ?? null;
+  if (numericMatch) return numericMatch[0];
+
+  // Some payer sites put the publication date only in the destination slug.
+  // Keep this deliberately strict so a year or an arbitrary numeric slug does
+  // not qualify a link on its own.
+  const dashed = normalized.match(/\b\d{1,2}-\d{1,2}-(?:\d{2}|\d{4})\b/);
+  if (dashed) {
+    const [month, , yearPart] = dashed[0].split("-");
+    const year = yearPart.length === 2 ? 2000 + Number(yearPart) : Number(yearPart);
+    if (Number(month) === monthNumber && year === target.year) return dashed[0];
+  }
+
+  const compact = normalized.match(/\b\d{8}\b/);
+  if (compact) {
+    const value = compact[0];
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6));
+    if (month === monthNumber && year === target.year) return value;
+  }
+
+  return null;
 }
 
 function normaliseArticleTitle(candidate: RenderedDiscoveryCandidate): string {
@@ -207,7 +227,10 @@ function normaliseArticleTitle(candidate: RenderedDiscoveryCandidate): string {
   }
 }
 
-function isAllowedCandidate(candidate: RenderedDiscoveryCandidate): boolean {
+function isAllowedCandidate(
+  candidate: RenderedDiscoveryCandidate,
+  hasDatedDestination: boolean,
+): boolean {
   let parsed: URL;
   try {
     parsed = new URL(candidate.href);
@@ -219,7 +242,11 @@ function isAllowedCandidate(candidate: RenderedDiscoveryCandidate): boolean {
 
   const signal = `${parsed.pathname} ${candidate.title} ${candidate.context}`.replace(/[-_/]+/g, " ");
   if (EXCLUDED_LINK.test(signal)) return false;
-  return parsed.pathname.toLowerCase().endsWith(".pdf") || ARTICLE_LINK.test(signal);
+  return (
+    parsed.pathname.toLowerCase().endsWith(".pdf") ||
+    ARTICLE_LINK.test(signal) ||
+    hasDatedDestination
+  );
 }
 
 /**
@@ -230,12 +257,21 @@ function isAllowedCandidate(candidate: RenderedDiscoveryCandidate): boolean {
 export function collectDiscoveryArticles(
   candidates: RenderedDiscoveryCandidate[],
   target: DiscoveryTarget,
+  pageContext = "",
 ): DiscoveryArticle[] {
   const seen = new Set<string>();
   const articles: DiscoveryArticle[] = [];
 
   for (const candidate of candidates) {
-    if (!isAllowedCandidate(candidate)) continue;
+    const destinationDate = dateForTarget(candidate.href, target);
+    const newsletterSignal = `${candidate.href} ${candidate.title} ${candidate.context}`.replace(
+      /[-_/]+/g,
+      " ",
+    );
+    const isNewsletterIssue =
+      /\b(?:newsletter|blue review|issue)\b/i.test(newsletterSignal) &&
+      Boolean(dateForTarget(pageContext, target));
+    if (!isAllowedCandidate(candidate, Boolean(destinationDate) || isNewsletterIssue)) continue;
     let url: string;
     try {
       url = new URL(candidate.href).toString();
@@ -244,9 +280,10 @@ export function collectDiscoveryArticles(
     }
     if (seen.has(url)) continue;
 
-    const entryDate = dateForTarget(candidate.context, target);
+    const entryDate = dateForTarget(candidate.context, target) ?? destinationDate;
     const sectionDate = dateForTarget(candidate.sectionText, target);
-    const date = entryDate ?? sectionDate;
+    const issueDate = isNewsletterIssue ? dateForTarget(pageContext, target) : null;
+    const date = entryDate ?? sectionDate ?? issueDate;
     if (!date) continue;
 
     seen.add(url);
