@@ -199,6 +199,80 @@ describe("discovery link collection", () => {
     expect(july.map(({ Date }) => Date)).toEqual(["7-15-26", "7-7-2026", "20260701"]);
   });
 
+  it("keeps malformed dates and date-like archive links out of results", () => {
+    const articles = collectDiscoveryArticles(
+      [
+        {
+          href: "https://payer.example/news/august-policy",
+          title: "Medical policy update",
+          context: "August 32, 2026",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2026-08-00-update",
+          title: "Medical policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2026-13-15-update",
+          title: "Medical policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/8-32-26-policy-update",
+          title: "Medical policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/20260800-policy-update",
+          title: "Medical policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/archive/2026/08/15",
+          title: "Archive",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/page/2026/08/15",
+          title: "Next",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      target,
+    );
+
+    expect(articles).toEqual([]);
+  });
+
+  it("matches valid dashed and compact publication dates in destinations", () => {
+    const articles = collectDiscoveryArticles(
+      [
+        {
+          href: "https://payer.example/news/8-31-26-provider-update",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/files/20260831-bulletin.pdf",
+          title: "Read More",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      target,
+    );
+
+    expect(articles.map(({ Date }) => Date)).toEqual(["8-31-26", "20260831"]);
+  });
+
   it("uses the issue month for a newsletter issue link without broadening filtering", () => {
     const august = collectDiscoveryArticles(
       [

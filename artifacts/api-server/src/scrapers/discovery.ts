@@ -169,20 +169,40 @@ function whitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function isValidCalendarDate(year: number, monthIndex: number, day: number): boolean {
+  if (!Number.isInteger(day) || day < 1) return false;
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  return day <= lastDay;
+}
+
 function dateForTarget(text: string, target: DiscoveryTarget): string | null {
   const normalized = whitespace(text);
   const monthName = target.month;
   const monthPattern = `(?:${monthName}|${monthName.slice(0, 3)}\\.)`;
   const named = new RegExp(
-    `\\b(?:${monthPattern}\\s+(?:\\d{1,2},?\\s+)?${target.year}|\\d{1,2}\\s+${monthPattern}\\s+${target.year})\\b`,
+    `\\b(?:${monthPattern}\\s+(?:(\\d{1,2}),?\\s+)?${target.year}|(\\d{1,2})\\s+${monthPattern}\\s+${target.year})\\b`,
     "i",
   );
   const namedMatch = normalized.match(named);
-  if (namedMatch) return namedMatch[0];
+  if (
+    namedMatch &&
+    (!namedMatch[1] && !namedMatch[2] ||
+      isValidCalendarDate(
+        target.year,
+        target.monthIndex,
+        Number(namedMatch[1] ?? namedMatch[2]),
+      ))
+  ) {
+    return namedMatch[0];
+  }
 
-  const iso = new RegExp(`\\b${target.year}-${String(target.monthIndex + 1).padStart(2, "0")}-\\d{2}\\b`);
+  const iso = new RegExp(
+    `\\b${target.year}-${String(target.monthIndex + 1).padStart(2, "0")}-(\\d{2})\\b`,
+  );
   const isoMatch = normalized.match(iso);
-  if (isoMatch) return isoMatch[0];
+  if (isoMatch && isValidCalendarDate(target.year, target.monthIndex, Number(isoMatch[1]))) {
+    return isoMatch[0];
+  }
 
   const monthNumber = target.monthIndex + 1;
   const numericMonth =
@@ -192,16 +212,28 @@ function dateForTarget(text: string, target: DiscoveryTarget): string | null {
     `\\b${numericMonth}[/-]\\d{1,2}[/-]${numericYear}\\b|\\b\\d{1,2}[/-]${numericMonth}[/-]${numericYear}\\b`,
   );
   const numericMatch = normalized.match(numeric);
-  if (numericMatch) return numericMatch[0];
+  if (numericMatch) {
+    const parts = numericMatch[0].split(/[/-]/).map(Number);
+    const day = parts[0] === monthNumber ? parts[1] : parts[0];
+    if (isValidCalendarDate(target.year, target.monthIndex, day)) return numericMatch[0];
+  }
 
   // Some payer sites put the publication date only in the destination slug.
   // Keep this deliberately strict so a year or an arbitrary numeric slug does
   // not qualify a link on its own.
   const dashed = normalized.match(/\b\d{1,2}-\d{1,2}-(?:\d{2}|\d{4})\b/);
   if (dashed) {
-    const [month, , yearPart] = dashed[0].split("-");
+    const [monthPart, dayPart, yearPart] = dashed[0].split("-");
+    const month = Number(monthPart);
+    const day = Number(dayPart);
     const year = yearPart.length === 2 ? 2000 + Number(yearPart) : Number(yearPart);
-    if (Number(month) === monthNumber && year === target.year) return dashed[0];
+    if (
+      month === monthNumber &&
+      year === target.year &&
+      isValidCalendarDate(year, target.monthIndex, day)
+    ) {
+      return dashed[0];
+    }
   }
 
   const compact = normalized.match(/\b\d{8}\b/);
@@ -209,7 +241,14 @@ function dateForTarget(text: string, target: DiscoveryTarget): string | null {
     const value = compact[0];
     const year = Number(value.slice(0, 4));
     const month = Number(value.slice(4, 6));
-    if (month === monthNumber && year === target.year) return value;
+    const day = Number(value.slice(6, 8));
+    if (
+      month === monthNumber &&
+      year === target.year &&
+      isValidCalendarDate(year, target.monthIndex, day)
+    ) {
+      return value;
+    }
   }
 
   return null;
