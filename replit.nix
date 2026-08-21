@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.libgbm
     pkgs.tesseract
     pkgs.python313Packages.pymupdf
     pkgs.python313

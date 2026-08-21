@@ -18,7 +18,7 @@ import {
   type DiscoveryRequestBody,
   type DiscoveryResponse,
 } from "../scrapers/discovery.js";
-import { BrowserPoolFullError } from "../scrapers/browser-pool.js";
+import { BrowserLaunchError, BrowserPoolFullError } from "../scrapers/browser-pool.js";
 import { UrlValidationError } from "../utils/validation.js";
 
 const router: IRouter = Router();
@@ -119,6 +119,8 @@ router.post("/scrape/discovery", requireApiKey, async (req, res) => {
       fail(error.httpStatus, error.message);
     } else if (error instanceof BrowserPoolFullError) {
       fail(503, error.message);
+    } else if (error instanceof BrowserLaunchError) {
+      fail(502, error.message);
     } else if (error instanceof DiscoveryNavigationError) {
       fail(error.statusCode, error.message);
     } else {

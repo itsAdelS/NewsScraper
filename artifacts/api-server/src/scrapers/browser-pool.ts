@@ -45,6 +45,31 @@ export class BrowserPoolFullError extends Error {
   }
 }
 
+/**
+ * Thrown when Chromium cannot be started at all, such as when a system shared
+ * library is unavailable. Routes can return a clear operational response
+ * without exposing Playwright's full process log to API clients.
+ */
+export class BrowserLaunchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowserLaunchError";
+  }
+}
+
+function classifyBrowserLaunchError(error: unknown): BrowserLaunchError {
+  const detail = error instanceof Error ? error.message : String(error);
+  const missingLibrary = detail.match(/error while loading shared libraries:\s*([^\s:]+)/i)?.[1];
+  if (missingLibrary) {
+    return new BrowserLaunchError(
+      `Browser automation could not start because Chromium is missing the runtime library ${missingLibrary}.`,
+    );
+  }
+  return new BrowserLaunchError(
+    "Browser automation could not start. The server could not launch Chromium.",
+  );
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** How long the pool waits with no activity before closing Chromium. */
@@ -196,7 +221,9 @@ class BrowserPool {
       })
       .catch((err: unknown) => {
         this.launching = null;
-        throw err;
+        const launchError = classifyBrowserLaunchError(err);
+        logger.error({ err }, launchError.message);
+        throw launchError;
       });
 
     return this.launching;

@@ -231,4 +231,24 @@ describe("POST /api/scrape/discovery", () => {
       }),
     );
   });
+
+  it("returns a concise 502 diagnostic when Chromium cannot launch", async () => {
+    const { BrowserLaunchError } = await import("../scrapers/browser-pool.js");
+    mockedRender.mockRejectedValueOnce(
+      new BrowserLaunchError(
+        "Browser automation could not start because Chromium is missing the runtime library libgbm.so.1.",
+      ),
+    );
+    const res = await request(appForTest())
+      .post("/api/scrape/discovery")
+      .set(AUTH)
+      .send({ url: "https://payer.example/updates", targetMonth: "August", targetYear: "2026" });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: "Browser automation could not start because Chromium is missing the runtime library libgbm.so.1.",
+      diagnostics: { pageRendered: false },
+    });
+  });
 });

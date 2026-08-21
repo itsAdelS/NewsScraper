@@ -8,11 +8,12 @@ description: How to get Playwright's bundled Chromium to launch in Replit's NixO
 ## The Rule
 Playwright's pre-compiled Chromium binary (`chromium_headless_shell`) is an FHS binary compiled for Debian/Ubuntu. On NixOS it cannot find two system libraries that aren't in the default dynamic linker path.
 
-**Why:** `libgbm.so.1` and `libudev.so.1` are not part of glibc (which is always present) — they come from Mesa and systemd, which must be explicitly installed AND their Nix store paths added to `LD_LIBRARY_PATH`.
+**Why:** `libgbm.so.1` and `libudev.so.1` are not part of glibc (which is always present). In the current Replit NixOS package set, `libgbm` is a separate dependency rather than a file provided by `mesa`.
 
 ## How to Apply
-1. Install the Nix packages via `installSystemDependencies(["mesa", "systemd"])` (or more precisely `mesa` installs `mesa-libgbm`; `systemd` installs `systemd-minimal`).
-2. Set `LD_LIBRARY_PATH` in the server dev script by deriving the Mesa and systemd library directories from the matching package entries already on `PATH`:
+1. Install the Nix packages via `installSystemDependencies(["libgbm", "systemd"])`.
+2. Keep `pkgs.libgbm` explicitly listed in `replit.nix`. `libgbm` has no `bin/` directory, so do not try to derive its library path from `PATH`; the Replit Nix runtime exposes it to the dynamic linker directly.
+3. Set `LD_LIBRARY_PATH` for dependencies that do expose a `bin/` directory, such as systemd, by deriving library directories from matching `PATH` entries:
    ```
     for p in ${PATH//:/ }; do
       case "$p" in
@@ -24,11 +25,11 @@ Playwright's pre-compiled Chromium binary (`chromium_headless_shell`) is an FHS 
    Do not search `/nix/store` with sequential wildcard globs during process startup.
    
    **Why:** In this environment, a second broad `/nix/store/*` expansion can stall the launcher before Node is executed, causing artifact workflow port timeouts. `PATH` already contains the required package roots and has no hash coupling.
-3. Do NOT use the `electronplayer-*-fhs/usr/lib64/` path — it contains an older glibc that breaks `/bin/sh`.
-4. Add `playwright install chromium` as a `postinstall` script in package.json so the binary is re-downloaded after any `pnpm install`.
+4. Do NOT use the `electronplayer-*-fhs/usr/lib64/` path — it contains an older glibc that breaks `/bin/sh`.
+5. Add `playwright install chromium` as a `postinstall` script in package.json so the binary is re-downloaded after any `pnpm install`.
 
 ## Verification
-- `ldd <chrome-headless-shell> | grep "not found"` → no output = all libs resolved
+- `ldd <chrome-headless-shell> | grep "not found"` → no output = all libs resolved. The API launcher should perform this bounded check and warn at startup if it regresses.
 - Test scrape returns `scraperUsed: playwright` (even if 403 SSRF) = Chromium launched
 
 ## Files
