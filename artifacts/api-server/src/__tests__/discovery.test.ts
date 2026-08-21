@@ -136,6 +136,39 @@ describe("discovery link collection", () => {
       },
     ]);
   });
+
+  it("matches unpadded numeric table dates on PDF alert links", () => {
+    const articles = collectDiscoveryArticles(
+      [
+        {
+          href: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126MPUpdts.pdf",
+          title: "Medical Policy Updates",
+          context: "8/1/2026 Medical Policy Updates All Providers",
+          sectionText: "",
+        },
+        {
+          href: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126PAUpdts.pdf",
+          title: "Prior Authorization (PA) List Updates",
+          context: "8/1/2026 Prior Authorization (PA) List Updates All Providers",
+          sectionText: "",
+        },
+      ],
+      target,
+    );
+
+    expect(articles).toEqual([
+      {
+        title: "Medical Policy Updates",
+        Date: "8/1/2026",
+        URL: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126MPUpdts.pdf",
+      },
+      {
+        title: "Prior Authorization (PA) List Updates",
+        Date: "8/1/2026",
+        URL: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126PAUpdts.pdf",
+      },
+    ]);
+  });
 });
 
 describe("POST /api/scrape/discovery", () => {

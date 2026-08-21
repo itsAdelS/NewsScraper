@@ -184,8 +184,12 @@ function dateForTarget(text: string, target: DiscoveryTarget): string | null {
   const isoMatch = normalized.match(iso);
   if (isoMatch) return isoMatch[0];
 
+  const monthNumber = target.monthIndex + 1;
+  const numericMonth =
+    monthNumber < 10 ? `0?${monthNumber}` : String(monthNumber);
+  const numericYear = `(?:${target.year}|${String(target.year).slice(-2)})`;
   const numeric = new RegExp(
-    `\\b${String(target.monthIndex + 1).padStart(2, "0")}[/-]\\d{1,2}[/-]${target.year}\\b|\\b\\d{1,2}[/-]${String(target.monthIndex + 1).padStart(2, "0")}[/-]${target.year}\\b`,
+    `\\b${numericMonth}[/-]\\d{1,2}[/-]${numericYear}\\b|\\b\\d{1,2}[/-]${numericMonth}[/-]${numericYear}\\b`,
   );
   const numericMatch = normalized.match(numeric);
   return numericMatch?.[0] ?? null;
