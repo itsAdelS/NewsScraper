@@ -251,6 +251,84 @@ describe("discovery link collection", () => {
     expect(articles).toEqual([]);
   });
 
+  it("keeps February boundaries consistent for leap and non-leap years", () => {
+    const leapYearArticles = collectDiscoveryArticles(
+      [
+        {
+          href: "https://payer.example/news/february-28-policy",
+          title: "February 28 policy update",
+          context: "February 28, 2028",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/february-29-policy",
+          title: "February 29 policy update",
+          context: "February 29, 2028",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2028-02-29-iso-policy",
+          title: "ISO policy update",
+          context: "2028-02-29",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2-29-28-slug-policy",
+          title: "Dashed slug policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/files/20280229-compact-policy.pdf",
+          title: "Compact slug policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      { monthIndex: 1, month: "February", year: 2028 },
+    );
+
+    expect(leapYearArticles.map(({ Date }) => Date)).toEqual([
+      "February 28, 2028",
+      "February 29, 2028",
+      "2028-02-29",
+      "2-29-28",
+      "20280229",
+    ]);
+
+    const nonLeapYearArticles = collectDiscoveryArticles(
+      [
+        {
+          href: "https://payer.example/news/february-29-named",
+          title: "February 29 policy update",
+          context: "February 29, 2027",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2027-02-29-iso",
+          title: "ISO policy update",
+          context: "2027-02-29",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/news/2-29-27-slug",
+          title: "Dashed slug policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+        {
+          href: "https://payer.example/files/20270229-compact.pdf",
+          title: "Compact slug policy update",
+          context: "Read More",
+          sectionText: "",
+        },
+      ],
+      { monthIndex: 1, month: "February", year: 2027 },
+    );
+
+    expect(nonLeapYearArticles).toEqual([]);
+  });
+
   it("matches valid dashed and compact publication dates in destinations", () => {
     const articles = collectDiscoveryArticles(
       [
