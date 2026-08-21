@@ -67,7 +67,7 @@ export interface DiscoveryTarget {
 export interface DiscoveryArticle {
   title: string;
   Date: string;
-  URL: string;
+  url: string;
 }
 
 export interface DiscoveryDiagnostics {
@@ -250,7 +250,7 @@ export function collectDiscoveryArticles(
     if (!date) continue;
 
     seen.add(url);
-    articles.push({ title: normaliseArticleTitle(candidate), Date: date, URL: url });
+    articles.push({ title: normaliseArticleTitle(candidate), Date: date, url });
   }
 
   return articles;

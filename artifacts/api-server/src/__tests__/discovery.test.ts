@@ -105,12 +105,12 @@ describe("discovery link collection", () => {
       {
         title: "Provider alert",
         Date: "August 12, 2026",
-        URL: "https://payer.example/news/provider-alert",
+        url: "https://payer.example/news/provider-alert",
       },
       {
         title: "August bulletin PDF",
         Date: "2026-08-01",
-        URL: "https://payer.example/files/august-bulletin.pdf",
+        url: "https://payer.example/files/august-bulletin.pdf",
       },
     ]);
   });
@@ -132,7 +132,7 @@ describe("discovery link collection", () => {
       {
         title: "Network update",
         Date: "August 2026",
-        URL: "https://payer.example/updates/network-change",
+        url: "https://payer.example/updates/network-change",
       },
     ]);
   });
@@ -160,12 +160,12 @@ describe("discovery link collection", () => {
       {
         title: "Medical Policy Updates",
         Date: "8/1/2026",
-        URL: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126MPUpdts.pdf",
+        url: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126MPUpdts.pdf",
       },
       {
         title: "Prior Authorization (PA) List Updates",
         Date: "8/1/2026",
-        URL: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126PAUpdts.pdf",
+        url: "https://providers.bcidaho.com/resources/pdfs/providers/alerts/080126PAUpdts.pdf",
       },
     ]);
   });
@@ -219,7 +219,7 @@ describe("POST /api/scrape/discovery", () => {
         {
           title: "August policy update",
           Date: "August 4, 2026",
-          URL: "https://payer.example/news/august-update",
+          url: "https://payer.example/news/august-update",
         },
       ],
       diagnostics: { linksFound: 1, linksMatched: 1, pageRendered: true, errors: [] },

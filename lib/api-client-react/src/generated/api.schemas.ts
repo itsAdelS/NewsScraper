@@ -164,7 +164,7 @@ export interface DiscoveryArticle {
   title: string;
   /** Visible article date or the matching month/year section label. */
   Date: string;
-  URL: string;
+  url: string;
 }
 
 export interface DiscoveryDiagnostics {

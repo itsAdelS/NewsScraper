@@ -59,7 +59,7 @@ function DiscoveryResults({ data, error }: { data?: DiscoveryResponse; error?: a
             {data.Articles.length ? (
               <div className="divide-y border rounded-lg">
                 {data.Articles.map((article) => (
-                  <a key={article.URL} href={article.URL} target="_blank" rel="noreferrer" className="block p-4 hover:bg-muted/50 transition-colors">
+                  <a key={article.url} href={article.url} target="_blank" rel="noreferrer" className="block p-4 hover:bg-muted/50 transition-colors">
                     <p className="font-medium text-blue-600">{article.title}</p>
                     <p className="text-sm text-muted-foreground mt-1">{article.Date}</p>
                   </a>

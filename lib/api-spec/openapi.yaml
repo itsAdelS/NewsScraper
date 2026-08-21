@@ -382,13 +382,13 @@ components:
         Date:
           type: string
           description: Visible article date or the matching month/year section label.
-        URL:
+        url:
           type: string
           format: uri
       required:
         - title
         - Date
-        - URL
+        - url
 
     DiscoveryDiagnostics:
       type: object

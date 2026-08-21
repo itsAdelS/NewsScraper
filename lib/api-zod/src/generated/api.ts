@@ -105,7 +105,7 @@ export const DiscoverArticlesResponse = zod.object({
   "Articles": zod.array(zod.object({
   "title": zod.string(),
   "Date": zod.string().describe('Visible article date or the matching month\/year section label.'),
-  "URL": zod.url()
+  "url": zod.url()
 })),
   "diagnostics": zod.object({
   "linksFound": zod.int(),
